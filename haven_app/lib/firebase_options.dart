@@ -9,9 +9,9 @@ class DefaultFirebaseOptions {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
-        return ios;
+        throw UnsupportedError('Haven is not configured for iOS.');
       default:
-        throw UnsupportedError('Haven is configured for Android and iOS only.');
+        throw UnsupportedError('Haven is configured for Android only.');
     }
   }
 
@@ -21,14 +21,5 @@ class DefaultFirebaseOptions {
     messagingSenderId: '438806851788',
     projectId: 'haeven-b8e62',
     storageBucket: 'haeven-b8e62.firebasestorage.app',
-  );
-
-  static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'REPLACE_ME',
-    appId: 'REPLACE_ME',
-    messagingSenderId: 'REPLACE_ME',
-    projectId: 'REPLACE_ME',
-    storageBucket: 'REPLACE_ME.firebasestorage.app',
-    iosBundleId: 'com.haven.haven',
   );
 }
