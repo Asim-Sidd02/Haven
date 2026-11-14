@@ -8,6 +8,7 @@ import '../../services/db_service.dart';
 import '../../state/session.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/ui.dart';
 import '../shared/booking_tile.dart';
 
 class BouncerHomeScreen extends StatefulWidget {
@@ -65,19 +66,19 @@ class _BouncerHomeScreenState extends State<BouncerHomeScreen> {
                 const SizedBox(height: 16),
                 Row(children: [
                   Expanded(
-                      child: StatCard(
+                      child: StatTile(
                           label: 'New requests',
                           value: '${pending.length}',
                           icon: Icons.mark_email_unread_outlined)),
                   const SizedBox(width: 10),
                   Expanded(
-                      child: StatCard(
+                      child: StatTile(
                           label: 'Completed',
                           value: '${completed.length}',
                           icon: Icons.task_alt_rounded)),
                   const SizedBox(width: 10),
                   Expanded(
-                      child: StatCard(
+                      child: StatTile(
                           label: 'Rating',
                           value: (p == null || p.reviewCount == 0)
                               ? '—'

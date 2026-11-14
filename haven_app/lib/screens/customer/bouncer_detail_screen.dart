@@ -8,6 +8,7 @@ import '../../services/db_service.dart';
 import '../../state/session.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/ui.dart';
 import 'booking_form_screen.dart';
 
 class BouncerDetailScreen extends StatelessWidget {
@@ -64,19 +65,19 @@ class BouncerDetailScreen extends StatelessWidget {
             const SizedBox(height: 20),
             Row(children: [
               Expanded(
-                  child: StatCard(
+                  child: StatTile(
                       label: 'Experience',
                       value: '${b.experienceYears} yrs',
                       icon: Icons.workspace_premium_outlined)),
               const SizedBox(width: 10),
               Expanded(
-                  child: StatCard(
+                  child: StatTile(
                       label: 'Height',
                       value: b.heightCm > 0 ? '${b.heightCm} cm' : '—',
                       icon: Icons.straighten_rounded)),
               const SizedBox(width: 10),
               Expanded(
-                  child: StatCard(
+                  child: StatTile(
                       label: 'Per hour',
                       value: session.money(b.hourlyRate),
                       icon: Icons.payments_outlined)),
