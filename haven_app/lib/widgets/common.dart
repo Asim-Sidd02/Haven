@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import '../models/booking.dart';
 import '../theme/app_theme.dart';
 
-/// Haven brand mark: a soft shield holding a heart — protection with care.
+/// Haven emblem — a shield holding two figures linked by a velvet rope.
+/// The figures are the guards at the door; together they form an "H";
+/// the rope dips into a gentle smile: protection, given with care.
+/// Geometry mirrors brand/haven-emblem.svg (100×100 design grid).
 class HavenLogo extends StatelessWidget {
   final double size;
   final bool showName;
@@ -12,32 +15,72 @@ class HavenLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mark = Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: HavenColors.sageSoft,
-        borderRadius: BorderRadius.circular(size * 0.32),
-      ),
-      child: Stack(alignment: Alignment.center, children: [
-        Icon(Icons.shield_outlined, size: size * 0.62, color: HavenColors.sage),
-        Padding(
-          padding: EdgeInsets.only(bottom: size * 0.04),
-          child:
-              Icon(Icons.favorite, size: size * 0.22, color: HavenColors.sand),
-        ),
-      ]),
+    final mark = SizedBox.square(
+      dimension: size,
+      child: const CustomPaint(painter: _HavenEmblemPainter()),
     );
     if (!showName) return mark;
     return Column(mainAxisSize: MainAxisSize.min, children: [
       mark,
-      const SizedBox(height: 12),
+      SizedBox(height: size * 0.2),
       Text('Haven', style: Theme.of(context).textTheme.headlineMedium),
-      const SizedBox(height: 4),
-      const Text('Safety, booked with care',
-          style: TextStyle(color: HavenColors.muted, letterSpacing: 0.3)),
+      const SizedBox(height: 6),
+      const Text('SAFETY, BOOKED WITH CARE',
+          style: TextStyle(
+              color: HavenColors.muted, fontSize: 11, letterSpacing: 1.8)),
     ]);
   }
+}
+
+class _HavenEmblemPainter extends CustomPainter {
+  const _HavenEmblemPainter();
+
+  static const _rope = Color(0xFFD2B496);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.scale(size.width / 100, size.height / 100);
+
+    // Shield
+    final shield = Path()
+      ..moveTo(50, 4)
+      ..lineTo(88, 16)
+      ..lineTo(88, 48)
+      ..cubicTo(88, 72, 71, 88, 50, 96)
+      ..cubicTo(29, 88, 12, 72, 12, 48)
+      ..lineTo(12, 16)
+      ..close();
+    canvas.drawPath(shield, Paint()..color = HavenColors.sage);
+
+    // Figures, scaled into the shield
+    canvas
+      ..translate(50, 50)
+      ..scale(0.78)
+      ..translate(-50, -52);
+    final fg = Paint()..color = HavenColors.cream;
+    canvas
+      ..drawCircle(const Offset(32, 27), 6.5, fg)
+      ..drawCircle(const Offset(68, 27), 6.5, fg)
+      ..drawRRect(
+          RRect.fromLTRBR(26.5, 38, 37.5, 78, const Radius.circular(5.5)), fg)
+      ..drawRRect(
+          RRect.fromLTRBR(62.5, 38, 73.5, 78, const Radius.circular(5.5)), fg);
+
+    // Velvet rope / smile
+    final rope = Path()
+      ..moveTo(37.5, 50)
+      ..quadraticBezierTo(50, 66, 62.5, 50);
+    canvas.drawPath(
+        rope,
+        Paint()
+          ..color = _rope
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 6.5
+          ..strokeCap = StrokeCap.round);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class Avatar extends StatelessWidget {
