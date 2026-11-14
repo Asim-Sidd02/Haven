@@ -1,0 +1,110 @@
+rules_version = '2';
+
+// Haven — Firestore security rules
+// Roles live in users/{uid}.role : 'customer' | 'bouncer' | 'admin'
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function userDoc() { return get(/databases/$(database)/documents/users/$(uid())).data; }
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(uid()))
+        && userDoc().role == 'admin';
+    }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+
+    // ---------- users ----------
+    match /users/{userId} {
+      allow read: if signedIn() && (uid() == userId || isAdmin());
+      // Self sign-up: may only pick customer or bouncer, never admin.
+      allow create: if signedIn() && uid() == userId
+        && request.resource.data.role in ['customer', 'bouncer']
+        && request.resource.data.isActive == true;
+      // Self edit: cannot change own role or active flag.
+      allow update: if isAdmin()
+        || (signedIn() && uid() == userId
+            && !changed().hasAny(['role', 'isActive', 'createdAt']));
+      allow delete: if isAdmin();
+    }
+
+    // ---------- bouncers (public profiles) ----------
+    match /bouncers/{bouncerId} {
+      allow read: if signedIn()
+        && (resource.data.status == 'approved' || uid() == bouncerId || isAdmin());
+
+      allow create: if signedIn() && uid() == bouncerId
+        && request.resource.data.status == 'pending'
+        && request.resource.data.verified == false
+        && request.resource.data.rating == 0
+        && request.resource.data.reviewCount == 0
+        && request.resource.data.ratingTotal == 0;
+
+      allow update: if isAdmin()
+        // Bouncer edits own profile but not moderation / rating fields.
+        || (signedIn() && uid() == bouncerId
+            && !changed().hasAny(['status', 'verified', 'rating', 'reviewCount', 'ratingTotal', 'createdAt']))
+        // Any customer leaving a review may bump rating by exactly one review of 1–5 stars.
+        || (signedIn() && uid() != bouncerId
+            && changed().hasOnly(['rating', 'reviewCount', 'ratingTotal'])
+            && request.resource.data.reviewCount == resource.data.reviewCount + 1
+            && request.resource.data.ratingTotal - resource.data.ratingTotal >= 1
+            && request.resource.data.ratingTotal - resource.data.ratingTotal <= 5);
+
+      allow delete: if isAdmin();
+    }
+
+    // ---------- bookings ----------
+    match /bookings/{bookingId} {
+      function party() {
+        return signedIn() && (resource.data.customerId == uid() || resource.data.bouncerId == uid());
+      }
+
+      allow read: if party() || isAdmin();
+
+      allow create: if signedIn()
+        && request.resource.data.customerId == uid()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.reviewed == false;
+
+      allow update: if isAdmin()
+        // Customer: cancel a pending/accepted booking, or mark it reviewed.
+        || (signedIn() && resource.data.customerId == uid()
+            && changed().hasOnly(['status', 'updatedAt', 'reviewed'])
+            && ((request.resource.data.status == 'cancelled'
+                 && resource.data.status in ['pending', 'accepted'])
+                || (request.resource.data.status == resource.data.status
+                    && request.resource.data.reviewed == true
+                    && resource.data.status == 'completed')))
+        // Bouncer: accept/decline pending, complete accepted.
+        || (signedIn() && resource.data.bouncerId == uid()
+            && changed().hasOnly(['status', 'updatedAt', 'bouncerNote'])
+            && ((resource.data.status == 'pending'
+                 && request.resource.data.status in ['accepted', 'declined'])
+                || (resource.data.status == 'accepted'
+                    && request.resource.data.status in ['completed', 'accepted'])));
+
+      allow delete: if isAdmin();
+    }
+
+    // ---------- reviews (doc id == bookingId, so one review per booking) ----------
+    match /reviews/{bookingId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.customerId == uid()
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+        && get(/databases/$(database)/documents/bookings/$(bookingId)).data.customerId == uid()
+        && get(/databases/$(database)/documents/bookings/$(bookingId)).data.status == 'completed'
+        && get(/databases/$(database)/documents/bookings/$(bookingId)).data.bouncerId == request.resource.data.bouncerId;
+      allow update, delete: if isAdmin();
+    }
+
+    // ---------- app settings (admin-managed, readable by all signed-in) ----------
+    match /settings/{docId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+  }
+}
