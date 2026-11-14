@@ -34,6 +34,7 @@ All timestamps are Firestore `Timestamp`.
 | rating | number | ratingTotal / reviewCount (0 when none) |
 | ratingTotal | int | sum of stars |
 | reviewCount | int | |
+| lastReviewId | string \| null | internal marker written atomically with a new review |
 | createdAt | Timestamp | |
 | updatedAt | Timestamp | |
 

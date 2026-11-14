@@ -84,6 +84,7 @@ class Bouncer {
         'rating': 0,
         'reviewCount': 0,
         'ratingTotal': 0,
+        'lastReviewId': null,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };

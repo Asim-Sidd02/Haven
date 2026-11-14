@@ -147,7 +147,8 @@ class DbService {
       tx.update(bouncerRef, {
         'reviewCount': count,
         'ratingTotal': total,
-        'rating': double.parse((total / count).toStringAsFixed(2)),
+        'rating': total / count,
+        'lastReviewId': booking.id,
       });
     });
   }

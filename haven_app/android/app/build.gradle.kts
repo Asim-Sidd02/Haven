@@ -3,6 +3,38 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
+}
+
+val keystoreProperties = java.util.Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(keystorePropertiesFile.inputStream())
+}
+
+val validateReleaseSigning by tasks.registering {
+    doLast {
+        val requiredProperties = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+        val missingProperties = requiredProperties.filter {
+            keystoreProperties.getProperty(it).isNullOrBlank()
+        }
+        if (missingProperties.isNotEmpty()) {
+            throw GradleException(
+                "Release signing is not configured. Add ${missingProperties.joinToString()} to android/key.properties.",
+            )
+        }
+
+        val keystoreFile = rootProject.file(keystoreProperties.getProperty("storeFile")!!)
+        if (!keystoreFile.isFile) {
+            throw GradleException("Release keystore does not exist: $keystoreFile")
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name == "assembleRelease" || name == "bundleRelease") {
+        dependsOn(validateReleaseSigning)
+    }
 }
 
 android {
@@ -20,8 +52,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.haven.haven"
+        applicationId = "com.heaven.heaven"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 23
@@ -30,11 +61,20 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties.getProperty("keyAlias")
+            keyPassword = keystoreProperties.getProperty("keyPassword")
+            storeFile = keystoreProperties.getProperty("storeFile")?.let {
+                rootProject.file(it)
+            }
+            storePassword = keystoreProperties.getProperty("storePassword")
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

@@ -14,6 +14,42 @@ service cloud.firestore {
         && userDoc().role == 'admin';
     }
     function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function reviewPath(reviewId) {
+      return /databases/$(database)/documents/reviews/$(reviewId);
+    }
+    function bookingPath(bookingId) {
+      return /databases/$(database)/documents/bookings/$(bookingId);
+    }
+    function bouncerPath(bouncerId) {
+      return /databases/$(database)/documents/bouncers/$(bouncerId);
+    }
+    function validReviewRatingUpdate(bouncerId, reviewId) {
+      let review = getAfter(reviewPath(reviewId)).data;
+      let booking = get(bookingPath(reviewId)).data;
+      let bookingAfter = getAfter(bookingPath(reviewId)).data;
+      return existsAfter(reviewPath(reviewId))
+        && !exists(reviewPath(reviewId))
+        && exists(bookingPath(reviewId))
+        && review.bookingId == reviewId
+        && review.customerId == uid()
+        && review.bouncerId == bouncerId
+        && review.rating is int
+        && review.rating >= 1 && review.rating <= 5
+        && booking.customerId == uid()
+        && booking.bouncerId == bouncerId
+        && booking.status == 'completed'
+        && booking.reviewed == false
+        && bookingAfter.reviewed == true;
+    }
+    function bouncerRatingIncludesReview(bouncerId, reviewId, rating) {
+      let before = get(bouncerPath(bouncerId)).data;
+      let after = getAfter(bouncerPath(bouncerId)).data;
+      return exists(bouncerPath(bouncerId))
+        && after.lastReviewId == reviewId
+        && after.reviewCount == before.reviewCount + 1
+        && after.ratingTotal == before.ratingTotal + rating
+        && after.rating == after.ratingTotal / after.reviewCount;
+    }
 
     // ---------- users ----------
     match /users/{userId} {
@@ -39,18 +75,22 @@ service cloud.firestore {
         && request.resource.data.verified == false
         && request.resource.data.rating == 0
         && request.resource.data.reviewCount == 0
-        && request.resource.data.ratingTotal == 0;
-
+        && request.resource.data.ratingTotal == 0
+        && request.resource.data.lastReviewId == null;
       allow update: if isAdmin()
         // Bouncer edits own profile but not moderation / rating fields.
         || (signedIn() && uid() == bouncerId
-            && !changed().hasAny(['status', 'verified', 'rating', 'reviewCount', 'ratingTotal', 'createdAt']))
-        // Any customer leaving a review may bump rating by exactly one review of 1–5 stars.
+            && !changed().hasAny(['status', 'verified', 'rating', 'reviewCount', 'ratingTotal', 'lastReviewId', 'createdAt']))
+        // A rating increment must be atomic with its completed-booking review.
         || (signedIn() && uid() != bouncerId
-            && changed().hasOnly(['rating', 'reviewCount', 'ratingTotal'])
+            && request.resource.data.lastReviewId is string
+            && changed().hasOnly(['rating', 'reviewCount', 'ratingTotal', 'lastReviewId'])
             && request.resource.data.reviewCount == resource.data.reviewCount + 1
-            && request.resource.data.ratingTotal - resource.data.ratingTotal >= 1
-            && request.resource.data.ratingTotal - resource.data.ratingTotal <= 5);
+            && validReviewRatingUpdate(bouncerId, request.resource.data.lastReviewId)
+            && request.resource.data.ratingTotal == resource.data.ratingTotal
+                + getAfter(reviewPath(request.resource.data.lastReviewId)).data.rating
+            && request.resource.data.rating
+                == request.resource.data.ratingTotal / request.resource.data.reviewCount);
 
       allow delete: if isAdmin();
     }
@@ -92,12 +132,18 @@ service cloud.firestore {
     match /reviews/{bookingId} {
       allow read: if signedIn();
       allow create: if signedIn()
+        && request.resource.data.bookingId == bookingId
         && request.resource.data.customerId == uid()
+        && request.resource.data.bouncerId != uid()
         && request.resource.data.rating is int
         && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
-        && get(/databases/$(database)/documents/bookings/$(bookingId)).data.customerId == uid()
-        && get(/databases/$(database)/documents/bookings/$(bookingId)).data.status == 'completed'
-        && get(/databases/$(database)/documents/bookings/$(bookingId)).data.bouncerId == request.resource.data.bouncerId;
+        && get(bookingPath(bookingId)).data.customerId == uid()
+        && get(bookingPath(bookingId)).data.status == 'completed'
+        && get(bookingPath(bookingId)).data.reviewed == false
+        && get(bookingPath(bookingId)).data.bouncerId == request.resource.data.bouncerId
+        && getAfter(bookingPath(bookingId)).data.reviewed == true
+        && bouncerRatingIncludesReview(
+          request.resource.data.bouncerId, bookingId, request.resource.data.rating);
       allow update, delete: if isAdmin();
     }
 
