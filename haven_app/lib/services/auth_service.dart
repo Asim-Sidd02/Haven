@@ -5,8 +5,8 @@ import '../models/app_user.dart';
 import '../models/bouncer.dart';
 
 class AuthService {
-  final _auth = FirebaseAuth.instance;
-  final _db = FirebaseFirestore.instance;
+  FirebaseAuth get _auth => FirebaseAuth.instance;
+  FirebaseFirestore get _db => FirebaseFirestore.instance;
 
   Stream<User?> authChanges() => _auth.authStateChanges();
   User? get currentUser => _auth.currentUser;

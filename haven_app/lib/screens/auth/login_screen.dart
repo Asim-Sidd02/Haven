@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/ui.dart';
+import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -45,9 +47,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     try {
       await context.read<AuthService>().resetPassword(_email.text);
-      if (mounted) {
-        showMessage(context, 'We\'ve sent a reset link to your inbox.');
-      }
+      if (mounted) showMessage(context, 'We\'ve sent a reset link to your inbox.');
     } catch (e) {
       if (mounted) showMessage(context, AuthService.friendlyError(e));
     }
@@ -60,58 +60,62 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SafeArea(
         child: Form(
           key: _form,
-          child: ListView(padding: const EdgeInsets.all(24), children: [
-            Text('Welcome back',
-                style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: 6),
-            const Text('Good to see you again.',
-                style: TextStyle(color: HavenColors.muted)),
-            const SizedBox(height: 32),
-            TextFormField(
-              controller: _email,
-              keyboardType: TextInputType.emailAddress,
-              autofillHints: const [AutofillHints.email],
-              decoration: const InputDecoration(
-                  labelText: 'Email', prefixIcon: Icon(Icons.mail_outline)),
-              validator: (v) =>
-                  (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: _password,
-              obscureText: _obscure,
-              autofillHints: const [AutofillHints.password],
-              decoration: InputDecoration(
-                labelText: 'Password',
-                prefixIcon: const Icon(Icons.lock_outline),
-                suffixIcon: IconButton(
-                  icon: Icon(_obscure
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined),
-                  onPressed: () => setState(() => _obscure = !_obscure),
+          child: ListView(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+              children: [
+                const HavenLogo(size: 56, showName: false),
+                const SizedBox(height: 22),
+                const PageTitle(
+                    title: 'Welcome back',
+                    subtitle: 'Good to see you again. Sign in to continue.'),
+                const SizedBox(height: 28),
+                TextFormField(
+                  controller: _email,
+                  keyboardType: TextInputType.emailAddress,
+                  autofillHints: const [AutofillHints.email],
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                      labelText: 'Email', prefixIcon: Icon(Icons.mail_outline)),
+                  validator: (v) =>
+                      (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
                 ),
-              ),
-              validator: (v) =>
-                  (v == null || v.isEmpty) ? 'Enter your password' : null,
-              onFieldSubmitted: (_) => _submit(),
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                  onPressed: _forgot, child: const Text('Forgot password?')),
-            ),
-            const SizedBox(height: 12),
-            FilledButton(
-              onPressed: _busy ? null : _submit,
-              child: _busy
-                  ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : const Text('Sign in'),
-            ),
-          ]),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _password,
+                  obscureText: _obscure,
+                  autofillHints: const [AutofillHints.password],
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      icon: Icon(_obscure
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined),
+                      onPressed: () => setState(() => _obscure = !_obscure),
+                    ),
+                  ),
+                  validator: (v) =>
+                      (v == null || v.isEmpty) ? 'Enter your password' : null,
+                  onFieldSubmitted: (_) => _submit(),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                      onPressed: _forgot, child: const Text('Forgot password?')),
+                ),
+                const SizedBox(height: 8),
+                PrimaryButton(label: 'Sign in', onPressed: _submit, loading: _busy),
+                const SizedBox(height: 24),
+                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  const Text('New to Haven?',
+                      style: TextStyle(color: HavenColors.muted)),
+                  TextButton(
+                    onPressed: () => Navigator.pushReplacement(context,
+                        MaterialPageRoute(builder: (_) => const SignupScreen())),
+                    child: const Text('Create an account'),
+                  ),
+                ]),
+              ]),
         ),
       ),
     );

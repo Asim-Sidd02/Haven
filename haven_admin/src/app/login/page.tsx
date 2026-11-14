@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { sendPasswordResetEmail, signInWithEmailAndPassword } from "firebase/auth";
-import { HeartHandshake } from "lucide-react";
+import { AlertCircle, HeartHandshake, ShieldCheck, Sparkles } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import { errMsg } from "@/lib/format";
 import { useAuth } from "@/components/AuthProvider";
-import { Brand } from "@/components/Brand";
+import { Brand, HavenEmblem } from "@/components/Brand";
 import { Button, Field, Input } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 
@@ -16,8 +16,15 @@ function friendly(e: unknown): string {
   if (m.includes("invalid-credential") || m.includes("wrong-password") || m.includes("user-not-found"))
     return "That email and password don't match our records.";
   if (m.includes("too-many-requests")) return "Too many attempts. Please wait a moment and try again.";
+  if (m.includes("network-request-failed")) return "We couldn't reach the server. Check your connection and try again.";
   return m;
 }
+
+const POINTS = [
+  { icon: ShieldCheck, title: "Review with care", text: "Every bouncer is checked by a person before customers can see them." },
+  { icon: HeartHandshake, title: "Keep bookings honest", text: "Step in when something looks off, and keep the record straight." },
+  { icon: Sparkles, title: "Make every event a safe place", text: "Ratings, settings and support, all in one calm workspace." },
+];
 
 export default function LoginPage() {
   const { state } = useAuth();
@@ -62,55 +69,119 @@ export default function LoginPage() {
     }
   }
 
+  const unconfigured = state.status === "unconfigured";
+
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
-      <div className="hidden flex-col justify-between bg-sage-dark p-12 text-white lg:flex">
-        <div className="flex items-center gap-2 text-white/90">
-          <HeartHandshake className="h-5 w-5" />
-          <span className="text-sm">Haven Admin</span>
+    <div className="grid min-h-screen lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+      {/* Brand panel */}
+      <section className="relative hidden flex-col justify-between overflow-hidden bg-sage-dark p-12 text-white lg:flex xl:p-16">
+        <div
+          className="pointer-events-none absolute -right-40 -top-40 h-[520px] w-[520px] rounded-full opacity-60"
+          style={{ background: "radial-gradient(closest-side, rgba(255,255,255,.08), transparent)" }}
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute -bottom-56 -left-24 h-[480px] w-[480px] rounded-full opacity-70"
+          style={{ background: "radial-gradient(closest-side, rgba(201,169,140,.18), transparent)" }}
+          aria-hidden
+        />
+
+        <div className="relative flex items-center gap-3">
+          <HavenEmblem className="h-9 w-9" />
+          <span className="text-sm font-medium tracking-wide text-white/80">Haven Admin</span>
         </div>
-        <div>
-          <h2 className="max-w-md text-3xl font-semibold leading-snug">
+
+        <div className="relative">
+          <HavenEmblem className="h-24 w-24 drop-shadow-[0_12px_24px_rgba(0,0,0,.18)]" />
+          <h2 className="mt-8 max-w-md font-serif text-[34px] font-semibold leading-[1.2] tracking-tight">
             Every booking is someone trusting us with their safety.
           </h2>
-          <p className="mt-4 max-w-md text-white/70">
-            Review bouncers with care, keep bookings honest, and make every event feel like a safe place.
-          </p>
+          <p className="mt-4 max-w-md text-[15px] leading-relaxed text-white/70">Safety, booked with care.</p>
+
+          <ul className="mt-10 space-y-5">
+            {POINTS.map(({ icon: Icon, title, text }) => (
+              <li key={title} className="flex max-w-md gap-4">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-sand">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">{title}</p>
+                  <p className="mt-0.5 text-[13px] leading-relaxed text-white/65">{text}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
-        <p className="text-xs text-white/50">Safety, booked with care.</p>
-      </div>
 
-      <div className="flex items-center justify-center p-6">
-        <div className="w-full max-w-sm">
-          <Brand />
-          <h1 className="mt-10 text-2xl font-semibold tracking-tight text-ink">Welcome back</h1>
-          <p className="mt-1 text-sm text-muted">Sign in with your admin account.</p>
+        <p className="relative text-xs text-white/40">© {new Date().getFullYear()} Haven · Admin workspace</p>
+      </section>
 
-          {state.status === "unconfigured" && (
-            <div className="mt-6 rounded-xl border border-amber-soft bg-amber-soft/60 px-4 py-3 text-sm text-amber">
-              Firebase isn&apos;t configured yet. Copy <code>.env.local.example</code> to <code>.env.local</code>, fill in your
-              project keys and restart the dev server.
-            </div>
-          )}
+      {/* Form panel */}
+      <section className="flex items-center justify-center px-5 py-10 sm:px-8">
+        <div className="w-full max-w-[400px]">
+          <div className="mb-10 lg:hidden">
+            <Brand />
+          </div>
 
-          {error && <div className="mt-6 rounded-xl border border-rose-soft bg-rose-soft/60 px-4 py-3 text-sm text-rose">{error}</div>}
+          <div className="rounded-2xl border border-line bg-white p-7 shadow-soft sm:p-9">
+            <h1 className="font-serif text-[26px] font-semibold tracking-tight text-ink">Welcome back</h1>
+            <p className="mt-1.5 text-sm text-muted">Sign in with your admin account.</p>
 
-          <form onSubmit={submit} className="mt-6 space-y-4">
-            <Field label="Email">
-              <Input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </Field>
-            <Field label="Password">
-              <Input type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-            </Field>
-            <Button type="submit" className="w-full" loading={busy} disabled={state.status === "unconfigured"}>
-              Sign in
-            </Button>
-          </form>
-          <button onClick={reset} className="mt-4 text-sm text-sage hover:text-sage-dark">
-            Forgot password?
-          </button>
+            {unconfigured && (
+              <div className="mt-6 rounded-xl border border-amber-soft bg-amber-soft/60 px-4 py-3 text-[13px] leading-relaxed text-amber">
+                Firebase isn&apos;t configured yet. Copy <code className="rounded bg-white/60 px-1">.env.local.example</code> to{" "}
+                <code className="rounded bg-white/60 px-1">.env.local</code>, fill in your project keys and restart the dev server.
+              </div>
+            )}
+
+            {error && (
+              <div role="alert" className="animate-fade-in mt-6 flex items-start gap-2 rounded-xl border border-rose-soft bg-rose-soft/60 px-4 py-3 text-[13px] leading-relaxed text-rose">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <form onSubmit={submit} className="mt-7 space-y-5">
+              <Field label="Email address">
+                <Input
+                  type="email"
+                  required
+                  autoComplete="email"
+                  placeholder="you@haven.app"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={unconfigured}
+                />
+              </Field>
+              <div>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <label htmlFor="password" className="text-xs font-medium text-ink/80">
+                    Password
+                  </label>
+                  <button type="button" onClick={reset} className="text-xs font-medium text-sage transition hover:text-sage-dark" disabled={unconfigured}>
+                    Forgot password?
+                  </button>
+                </div>
+                <Input
+                  id="password"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={unconfigured}
+                />
+              </div>
+              <Button type="submit" className="h-11 w-full" loading={busy} disabled={unconfigured}>
+                Sign in
+              </Button>
+            </form>
+          </div>
+
+          <p className="mt-6 text-center text-xs text-muted">Admin access only. Need an account? Ask an existing admin to grant you access.</p>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

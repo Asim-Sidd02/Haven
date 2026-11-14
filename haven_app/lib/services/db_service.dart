@@ -6,10 +6,12 @@ import '../models/bouncer.dart';
 import '../models/review.dart';
 
 class DbService {
-  DbService._();
-  static final instance = DbService._();
+  DbService(this._db);
 
-  final _db = FirebaseFirestore.instance;
+  /// App-wide instance. Tests may replace it with one backed by a fake store.
+  static DbService instance = DbService(FirebaseFirestore.instance);
+
+  final FirebaseFirestore _db;
 
   CollectionReference<Map<String, dynamic>> get _users =>
       _db.collection('users');

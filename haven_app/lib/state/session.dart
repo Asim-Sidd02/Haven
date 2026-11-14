@@ -25,6 +25,13 @@ class Session extends ChangeNotifier {
     _authSub = auth.authChanges().listen(_onAuth);
   }
 
+  /// A signed-in session with a fixed user and no Firebase listeners.
+  /// Used by previews and widget tests.
+  Session.preview(this.auth, AppUser previewUser, {this.currency = 'USD'}) {
+    user = previewUser;
+    state = SessionState.signedIn;
+  }
+
   void _onAuth(User? fbUser) {
     _userSub?.cancel();
     if (fbUser == null) {

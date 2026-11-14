@@ -33,7 +33,7 @@ class HavenApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Haven',
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.light,
+        theme: AppTheme.light(),
         home: const RootGate(),
       ),
     );
