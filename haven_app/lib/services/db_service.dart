@@ -28,8 +28,13 @@ class DbService {
       .snapshots()
       .map((d) => d.exists ? AppUser.fromDoc(d) : null);
 
-  Future<void> updateUser(String uid,
-      {String? name, String? phone, String? photoUrl, bool isBouncer = false}) async {
+  Future<void> updateUser(
+    String uid, {
+    String? name,
+    String? phone,
+    String? photoUrl,
+    bool isBouncer = false,
+  }) async {
     final data = <String, dynamic>{
       'name': ?name,
       'phone': ?phone,
@@ -77,9 +82,11 @@ class DbService {
     await _users.doc(b.uid).update({'name': b.name, 'photoUrl': b.photoUrl});
   }
 
-  Future<void> setAvailability(String uid, bool available) => _bouncers
-      .doc(uid)
-      .update({'available': available, 'updatedAt': FieldValue.serverTimestamp()});
+  Future<void> setAvailability(String uid, bool available) =>
+      _bouncers.doc(uid).update({
+        'available': available,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 
   // ---------- bookings ----------
   Future<void> createBooking(Booking b) => _bookings.add(b.toCreateMap());

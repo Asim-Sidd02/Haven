@@ -13,7 +13,9 @@ class AuthService {
 
   Future<void> signIn(String email, String password) async {
     await _auth.signInWithEmailAndPassword(
-        email: email.trim(), password: password);
+      email: email.trim(),
+      password: password,
+    );
   }
 
   Future<void> signUp({
@@ -24,7 +26,9 @@ class AuthService {
     required UserRole role,
   }) async {
     final cred = await _auth.createUserWithEmailAndPassword(
-        email: email.trim(), password: password);
+      email: email.trim(),
+      password: password,
+    );
     final uid = cred.user!.uid;
     await cred.user!.updateDisplayName(name);
 
@@ -38,8 +42,10 @@ class AuthService {
     final batch = _db.batch();
     batch.set(_db.collection('users').doc(uid), user.toCreateMap());
     if (role == UserRole.bouncer) {
-      batch.set(_db.collection('bouncers').doc(uid),
-          Bouncer.initialMap(uid, name.trim()));
+      batch.set(
+        _db.collection('bouncers').doc(uid),
+        Bouncer.initialMap(uid, name.trim()),
+      );
     }
     await batch.commit();
   }

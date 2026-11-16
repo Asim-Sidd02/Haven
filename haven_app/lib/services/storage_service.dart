@@ -17,7 +17,9 @@ class StorageService {
     if (file == null) return null;
     final ref = FirebaseStorage.instance.ref('users/$uid/avatar.jpg');
     await ref.putFile(
-        File(file.path), SettableMetadata(contentType: 'image/jpeg'));
+      File(file.path),
+      SettableMetadata(contentType: 'image/jpeg'),
+    );
     return ref.getDownloadURL();
   }
 }

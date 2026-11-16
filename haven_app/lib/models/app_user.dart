@@ -2,8 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum UserRole { customer, bouncer, admin }
 
-UserRole roleFrom(String? v) => UserRole.values
-    .firstWhere((r) => r.name == v, orElse: () => UserRole.customer);
+UserRole roleFrom(String? v) => UserRole.values.firstWhere(
+  (r) => r.name == v,
+  orElse: () => UserRole.customer,
+);
 
 class AppUser {
   final String uid;
@@ -41,13 +43,13 @@ class AppUser {
   }
 
   Map<String, dynamic> toCreateMap() => {
-        'uid': uid,
-        'name': name,
-        'email': email,
-        'phone': phone,
-        'photoUrl': photoUrl,
-        'role': role.name,
-        'isActive': true,
-        'createdAt': FieldValue.serverTimestamp(),
-      };
+    'uid': uid,
+    'name': name,
+    'email': email,
+    'phone': phone,
+    'photoUrl': photoUrl,
+    'role': role.name,
+    'isActive': true,
+    'createdAt': FieldValue.serverTimestamp(),
+  };
 }

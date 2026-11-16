@@ -43,15 +43,20 @@ class Session extends ChangeNotifier {
     state = SessionState.loading;
     notifyListeners();
     _loadSettings();
-    _userSub = DbService.instance.userStream(fbUser.uid).listen((u) {
-      user = u;
-      state = SessionState.signedIn;
-      notifyListeners();
-    }, onError: (_) {
-      user = null;
-      state = SessionState.signedIn;
-      notifyListeners();
-    });
+    _userSub = DbService.instance
+        .userStream(fbUser.uid)
+        .listen(
+          (u) {
+            user = u;
+            state = SessionState.signedIn;
+            notifyListeners();
+          },
+          onError: (_) {
+            user = null;
+            state = SessionState.signedIn;
+            notifyListeners();
+          },
+        );
   }
 
   Future<void> _loadSettings() async {

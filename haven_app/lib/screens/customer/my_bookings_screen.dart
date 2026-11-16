@@ -6,6 +6,7 @@ import '../../services/db_service.dart';
 import '../../state/session.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/ui.dart';
 import '../shared/booking_tile.dart';
 
 class MyBookingsScreen extends StatefulWidget {
@@ -34,7 +35,10 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
           bottom: const TabBar(
             labelColor: HavenColors.sageDark,
             indicatorColor: HavenColors.sage,
-            tabs: [Tab(text: 'Upcoming'), Tab(text: 'Past')],
+            tabs: [
+              Tab(text: 'Upcoming'),
+              Tab(text: 'Past'),
+            ],
           ),
         ),
         body: StreamBuilder<List<Booking>>(
@@ -45,33 +49,37 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                   ? const EmptyState(
                       icon: Icons.cloud_off_outlined,
                       title: 'Couldn\'t load bookings',
-                      message: 'Please check your connection.')
+                      message: 'Please check your connection.',
+                    )
                   : const Center(
-                      child:
-                          CircularProgressIndicator(color: HavenColors.sage));
+                      child: CircularProgressIndicator(color: HavenColors.sage),
+                    );
             }
             final all = snap.data!;
             final upcoming = all.where((b) => b.isUpcoming).toList();
             final past = all.where((b) => !b.isUpcoming).toList();
-            return TabBarView(children: [
-              _List(
-                bookings: upcoming,
-                empty: const EmptyState(
-                  icon: Icons.event_available_outlined,
-                  title: 'Nothing planned yet',
-                  message:
-                      'When you request a booking, you\'ll be able to follow it here.',
+            return TabBarView(
+              children: [
+                _List(
+                  bookings: upcoming,
+                  empty: const EmptyState(
+                    icon: Icons.event_available_outlined,
+                    title: 'Nothing planned yet',
+                    message:
+                        'When you request a booking, you\'ll be able to follow it here.',
+                  ),
                 ),
-              ),
-              _List(
-                bookings: past,
-                empty: const EmptyState(
-                  icon: Icons.history_rounded,
-                  title: 'No past bookings',
-                  message: 'Your completed and cancelled bookings will appear here.',
+                _List(
+                  bookings: past,
+                  empty: const EmptyState(
+                    icon: Icons.history_rounded,
+                    title: 'No past bookings',
+                    message:
+                        'Your completed and cancelled bookings will appear here.',
+                  ),
                 ),
-              ),
-            ]);
+              ],
+            );
           },
         ),
       ),
@@ -91,7 +99,11 @@ class _List extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       itemCount: bookings.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (_, i) => BookingTile(booking: bookings[i], asBouncer: false),
+      itemBuilder: (_, i) => FadeSlideIn(
+        key: ValueKey(bookings[i].id),
+        index: i,
+        child: BookingTile(booking: bookings[i], asBouncer: false),
+      ),
     );
   }
 }

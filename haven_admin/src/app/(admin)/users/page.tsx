@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Users as UsersIcon } from "lucide-react";
 import { useCollection } from "@/hooks/useCollection";
 import { deleteUserEverywhere, updateUser } from "@/lib/actions";
 import { errMsg, fmtDate, matches } from "@/lib/format";
@@ -12,19 +12,24 @@ import {
   Button,
   Card,
   ConfirmDialog,
+  Drawer,
   Empty,
   ErrorNote,
   Field,
   FilterPills,
+  IconButton,
   Input,
-  Loading,
-  Modal,
   PageHeader,
+  RowActions,
   SearchBox,
+  Section,
   Select,
+  SkeletonRows,
   Table,
   Td,
   Toggle,
+  Toolbar,
+  Tr,
 } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { useAuth } from "@/components/AuthProvider";
@@ -68,6 +73,7 @@ export default function UsersPage() {
     setEditing(u);
     setForm({ name: u.name ?? "", phone: u.phone ?? "", role: u.role ?? "customer", isActive: u.isActive !== false });
   }
+  const close = () => setEditing(null);
 
   async function save() {
     if (!editing) return;
@@ -79,7 +85,7 @@ export default function UsersPage() {
     try {
       await updateUser(editing.id, { name: form.name.trim(), phone: form.phone.trim(), role: form.role, isActive: form.isActive });
       toast("User updated.");
-      setEditing(null);
+      close();
     } catch (e) {
       toast(errMsg(e), "error");
     } finally {
@@ -105,7 +111,7 @@ export default function UsersPage() {
       if (r.authDeleted) toast("User and sign-in account deleted.");
       else toast(`User records deleted. ${r.authMessage ?? ""}`, "error");
       setDeleting(null);
-      setEditing(null);
+      close();
     } catch (e) {
       toast(errMsg(e), "error");
     } finally {
@@ -113,72 +119,92 @@ export default function UsersPage() {
     }
   }
 
+  const isMe = editing?.id === me;
+
   return (
     <>
       <PageHeader title="Users" subtitle="Everyone who has joined Haven — customers, bouncers and admins." />
       <ErrorNote error={error} />
+
       <Card>
-        <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center lg:justify-between">
-          <FilterPills value={filter} onChange={setFilter} options={ROLES} counts={counts} />
-          <SearchBox value={q} onChange={setQ} placeholder="Search name, email or phone" />
-        </div>
-        {loading ? (
-          <Loading />
-        ) : rows.length === 0 ? (
-          <Empty title="No users found" hint="Try a different filter or search." />
+        <Toolbar
+          left={<FilterPills value={filter} onChange={setFilter} options={ROLES} counts={counts} />}
+          right={<SearchBox value={q} onChange={setQ} placeholder="Search name, email or phone" />}
+          count={loading ? undefined : rows.length}
+          noun="user"
+        />
+        {!loading && rows.length === 0 ? (
+          <Empty icon={UsersIcon} title="No users found" hint="Try a different filter or search." />
         ) : (
-          <Table head={["User", "Phone", "Role", "Status", "Joined", ""]}>
-            {rows.map((u) => (
-              <tr key={u.id} className="cursor-pointer hover:bg-cream/60" onClick={() => open(u)}>
-                <Td>
-                  <div className="flex items-center gap-3">
-                    <Avatar name={u.name} url={u.photoUrl} />
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-ink">
-                        {u.name || "Unnamed"} {u.id === me && <span className="text-xs font-normal text-muted">(you)</span>}
-                      </p>
-                      <p className="truncate text-xs text-muted">{u.email}</p>
+          <Table head={["User", "Phone", "Role", "Access", "Joined", { label: "", align: "right" }]} minWidth={720}>
+            {loading ? (
+              <SkeletonRows cols={6} />
+            ) : (
+              rows.map((u) => (
+                <Tr key={u.id} onClick={() => open(u)}>
+                  <Td>
+                    <div className="flex items-center gap-3">
+                      <Avatar name={u.name} url={u.photoUrl} />
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-ink">
+                          {u.name || "Unnamed"} {u.id === me && <span className="ml-1 rounded-md bg-cream px-1.5 py-px text-[10.5px] font-medium text-muted">You</span>}
+                        </p>
+                        <p className="truncate text-xs text-muted">{u.email}</p>
+                      </div>
                     </div>
-                  </div>
-                </Td>
-                <Td className="text-muted">{u.phone || "—"}</Td>
-                <Td>
-                  <Badge value={u.role} />
-                </Td>
-                <Td>
-                  <button onClick={(e) => (e.stopPropagation(), toggleActive(u))} title="Toggle access">
-                    <Badge value={u.isActive === false ? "inactive" : "active"} />
-                  </button>
-                </Td>
-                <Td className="text-muted">{fmtDate(u.createdAt)}</Td>
-                <Td className="text-right">
-                  <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                    <Button size="sm" variant="ghost" onClick={() => open(u)} aria-label="Edit">
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setDeleting(u)} aria-label="Delete" disabled={u.id === me}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </Td>
-              </tr>
-            ))}
+                  </Td>
+                  <Td className="tabular-nums text-muted">{u.phone || "—"}</Td>
+                  <Td>
+                    <Badge value={u.role} dot={false} />
+                  </Td>
+                  <Td>
+                    <button
+                      type="button"
+                      onClick={(e) => (e.stopPropagation(), toggleActive(u))}
+                      className="rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage/30"
+                      title={u.isActive === false ? "Re-activate" : "Deactivate"}
+                      aria-label={u.isActive === false ? "Re-activate account" : "Deactivate account"}
+                    >
+                      <Badge value={u.isActive === false ? "inactive" : "active"} />
+                    </button>
+                  </Td>
+                  <Td className="whitespace-nowrap text-muted">{fmtDate(u.createdAt)}</Td>
+                  <Td>
+                    <RowActions>
+                      <IconButton label="Edit user" onClick={() => open(u)}>
+                        <Pencil className="h-4 w-4" />
+                      </IconButton>
+                      <IconButton label="Delete user" tone="danger" onClick={() => setDeleting(u)} disabled={u.id === me}>
+                        <Trash2 className="h-4 w-4" />
+                      </IconButton>
+                    </RowActions>
+                  </Td>
+                </Tr>
+              ))
+            )}
           </Table>
         )}
       </Card>
 
-      <Modal
+      <Drawer
         open={!!editing}
-        onClose={() => setEditing(null)}
+        onClose={close}
         title="Edit user"
+        header={
+          editing && (
+            <div className="flex items-center gap-3">
+              <Avatar name={editing.name} url={editing.photoUrl} size={48} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-base font-semibold text-ink">{editing.name || "Unnamed"}</p>
+                <p className="truncate text-xs text-muted">{editing.email}</p>
+              </div>
+              <Badge value={editing.role} dot={false} />
+            </div>
+          )
+        }
         footer={
           <>
-            {editing && editing.id !== me && (
-              <Button variant="ghost" className="mr-auto text-rose hover:bg-rose-soft hover:text-rose" onClick={() => setDeleting(editing)}>
-                <Trash2 className="h-4 w-4" /> Delete
-              </Button>
-            )}
-            <Button variant="secondary" onClick={() => setEditing(null)}>
+            <Button variant="secondary" onClick={close}>
               Cancel
             </Button>
             <Button onClick={save} loading={saving}>
@@ -186,32 +212,67 @@ export default function UsersPage() {
             </Button>
           </>
         }
+        danger={
+          !isMe && (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-muted">Removes their records and, when configured, their sign-in account.</p>
+              <Button variant="secondary" size="sm" className="text-rose hover:bg-rose-soft" onClick={() => setDeleting(editing)}>
+                <Trash2 className="h-3.5 w-3.5" /> Delete user
+              </Button>
+            </div>
+          )
+        }
       >
         {editing && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-3 rounded-2xl bg-cream p-4">
-              <Avatar name={form.name} url={editing.photoUrl} size={48} />
-              <div className="min-w-0">
-                <p className="truncate font-medium text-ink">{editing.email}</p>
-                <p className="truncate text-xs text-muted">UID {editing.id}</p>
+          <>
+            <Section title="Details">
+              <div className="space-y-4">
+                <Field label="Full name">
+                  <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                </Field>
+                <Field label="Phone">
+                  <Input value={form.phone} inputMode="tel" onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+                </Field>
               </div>
-            </div>
-            <Field label="Full name">
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            </Field>
-            <Field label="Phone">
-              <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-            </Field>
-            <Field
-              label="Role"
-              hint={form.role === "admin" && editing.role !== "admin" ? "Admins get full access to every record in Haven." : undefined}
-            >
-              <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })} options={ROLES.map((r) => ({ value: r, label: r }))} />
-            </Field>
-            <Toggle checked={form.isActive} onChange={(v) => setForm({ ...form, isActive: v })} label="Account active (can sign in to the app)" />
-          </div>
+            </Section>
+
+            <Section title="Access">
+              <div className="space-y-4">
+                <Field
+                  label="Role"
+                  hint={
+                    isMe
+                      ? "You can't change your own role."
+                      : form.role === "admin" && editing.role !== "admin"
+                        ? "Admins get full access to every record in Haven."
+                        : undefined
+                  }
+                >
+                  <Select
+                    value={form.role}
+                    disabled={isMe}
+                    onChange={(e) => setForm({ ...form, role: e.target.value as Role })}
+                    options={ROLES.map((r) => ({ value: r, label: r }))}
+                  />
+                </Field>
+                <div className="rounded-xl border border-line p-4">
+                  <Toggle
+                    checked={form.isActive}
+                    disabled={isMe}
+                    onChange={(v) => setForm({ ...form, isActive: v })}
+                    label="Account active"
+                    description="Inactive users are signed out of the app and can't sign back in."
+                  />
+                </div>
+              </div>
+            </Section>
+
+            <p className="text-[11px] text-muted">
+              UID {editing.id} · joined {fmtDate(editing.createdAt)}
+            </p>
+          </>
         )}
-      </Modal>
+      </Drawer>
 
       <ConfirmDialog
         open={!!deleting}

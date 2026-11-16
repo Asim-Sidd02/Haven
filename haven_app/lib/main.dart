@@ -12,10 +12,12 @@ import 'theme/app_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.dark,
-  ));
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+    ),
+  );
   runApp(const HavenApp());
 }
 
@@ -27,8 +29,7 @@ class HavenApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         Provider(create: (_) => AuthService()),
-        ChangeNotifierProvider(
-            create: (c) => Session(c.read<AuthService>())),
+        ChangeNotifierProvider(create: (c) => Session(c.read<AuthService>())),
       ],
       child: MaterialApp(
         title: 'Haven',

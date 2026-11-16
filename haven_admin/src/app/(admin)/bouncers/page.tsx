@@ -1,36 +1,50 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, ShieldUser, Trash2 } from "lucide-react";
 import { useCollection } from "@/hooks/useCollection";
 import { useSettings } from "@/hooks/useSettings";
 import { deleteBouncerProfile, deleteUserEverywhere, setBouncerStatus, updateBouncer } from "@/lib/actions";
-import { errMsg, fmtDate, fmtMoney, matches, splitList } from "@/lib/format";
+import { errMsg, fmtDate, fmtMoney, matches } from "@/lib/format";
 import { BOUNCER_STATUSES, type Bouncer, type BouncerStatus } from "@/lib/types";
 import {
   Avatar,
   Badge,
   Button,
   Card,
+  ChipsInput,
   ConfirmDialog,
+  Drawer,
   Empty,
   ErrorNote,
   Field,
   FilterPills,
+  IconButton,
   Input,
-  Loading,
-  Modal,
   PageHeader,
+  RowActions,
   SearchBox,
-  Select,
+  Section,
+  SkeletonRows,
   Stars,
   Table,
   Td,
   Textarea,
   Toggle,
+  Toolbar,
+  Tr,
   Verified,
 } from "@/components/ui";
 import { useToast } from "@/components/Toast";
+
+const SKILL_SUGGESTIONS = ["Crowd control", "Door supervision", "VIP protection", "Event security", "First aid", "Conflict de-escalation", "CCTV monitoring", "Licensed / certified"];
+
+const STATUS_HELP: Record<BouncerStatus, string> = {
+  pending: "Hidden from customers until approved.",
+  approved: "Visible to customers and able to take bookings.",
+  rejected: "Hidden; the bouncer sees a note to update their profile.",
+  suspended: "Hidden; the bouncer is asked to contact support.",
+};
 
 interface Form {
   name: string;
@@ -39,8 +53,8 @@ interface Form {
   experienceYears: string;
   hourlyRate: string;
   heightCm: string;
-  skills: string;
-  languages: string;
+  skills: string[];
+  languages: string[];
   available: boolean;
   status: BouncerStatus;
   verified: boolean;
@@ -54,8 +68,8 @@ function toForm(b: Bouncer): Form {
     experienceYears: String(b.experienceYears ?? 0),
     hourlyRate: String(b.hourlyRate ?? 0),
     heightCm: String(b.heightCm ?? 0),
-    skills: (b.skills ?? []).join(", "),
-    languages: (b.languages ?? []).join(", "),
+    skills: b.skills ?? [],
+    languages: b.languages ?? [],
     available: Boolean(b.available),
     status: b.status ?? "pending",
     verified: Boolean(b.verified),
@@ -94,6 +108,9 @@ export default function BouncersPage() {
     setEditing(b);
     setForm(toForm(b));
   }
+  function close() {
+    setEditing(null);
+  }
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => (f ? { ...f, [k]: v } : f));
 
@@ -108,14 +125,14 @@ export default function BouncersPage() {
         experienceYears: Math.max(0, parseInt(form.experienceYears) || 0),
         hourlyRate: Math.max(0, parseFloat(form.hourlyRate) || 0),
         heightCm: Math.max(0, parseInt(form.heightCm) || 0),
-        skills: splitList(form.skills),
-        languages: splitList(form.languages),
+        skills: form.skills,
+        languages: form.languages,
         available: form.available,
         status: form.status,
         verified: form.verified,
       });
       toast("Profile saved.");
-      setEditing(null);
+      close();
     } catch (e) {
       toast(errMsg(e), "error");
     } finally {
@@ -145,7 +162,7 @@ export default function BouncersPage() {
         toast("Bouncer profile removed.");
       }
       setDeleting(null);
-      setEditing(null);
+      close();
     } catch (e) {
       toast(errMsg(e), "error");
     } finally {
@@ -153,95 +170,109 @@ export default function BouncersPage() {
     }
   }
 
+  const askDelete = (b: Bouncer | null) => {
+    if (!b) return;
+    setDeleteAccount(false);
+    setDeleting(b);
+  };
+
   return (
     <>
       <PageHeader title="Bouncers" subtitle="Review applications, keep profiles accurate, and award the verified badge." />
       <ErrorNote error={error} />
+
       <Card>
-        <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center lg:justify-between">
-          <FilterPills value={filter} onChange={setFilter} options={BOUNCER_STATUSES} counts={counts} />
-          <SearchBox value={q} onChange={setQ} placeholder="Search name, city or skill" />
-        </div>
-        {loading ? (
-          <Loading />
-        ) : rows.length === 0 ? (
-          <Empty title="No bouncers found" hint="Try a different filter or search." />
+        <Toolbar
+          left={<FilterPills value={filter} onChange={setFilter} options={BOUNCER_STATUSES} counts={counts} />}
+          right={<SearchBox value={q} onChange={setQ} placeholder="Search name, city or skill" />}
+          count={loading ? undefined : rows.length}
+          noun="bouncer"
+        />
+        {!loading && rows.length === 0 ? (
+          <Empty icon={ShieldUser} title="No bouncers found" hint={q || filter !== "all" ? "Try a different filter or search." : "Bouncer profiles appear here after they sign up in the app."} />
         ) : (
-          <Table head={["Bouncer", "City", "Rate", "Rating", "Status", "Joined", ""]}>
-            {rows.map((b) => (
-              <tr key={b.id} className="cursor-pointer hover:bg-cream/60" onClick={() => open(b)}>
-                <Td>
-                  <div className="flex items-center gap-3">
-                    <Avatar name={b.name} url={b.photoUrl} />
-                    <div>
-                      <p className="font-medium text-ink">
-                        {b.name} {b.verified && <Verified />}
-                      </p>
-                      <p className="text-xs text-muted">
-                        {b.experienceYears ?? 0} yrs · {b.available ? "Taking bookings" : "Unavailable"}
-                      </p>
+          <Table head={["Bouncer", "City", "Rate", "Rating", "Status", "Joined", { label: "", align: "right" }]}>
+            {loading ? (
+              <SkeletonRows cols={7} />
+            ) : (
+              rows.map((b) => (
+                <Tr key={b.id} onClick={() => open(b)}>
+                  <Td>
+                    <div className="flex items-center gap-3">
+                      <Avatar name={b.name} url={b.photoUrl} />
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-1 truncate font-semibold text-ink">
+                          {b.name} {b.verified && <Verified />}
+                        </p>
+                        <p className="truncate text-xs text-muted">
+                          {b.experienceYears ?? 0} yrs ·{" "}
+                          <span className={b.available ? "text-sage-dark" : ""}>{b.available ? "Taking bookings" : "Unavailable"}</span>
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                </Td>
-                <Td className="text-muted">{b.city || "—"}</Td>
-                <Td>{fmtMoney(b.hourlyRate, settings.currency)}/hr</Td>
-                <Td>
-                  <div className="flex items-center gap-2">
-                    <Stars value={b.rating ?? 0} />
-                    <span className="text-xs text-muted">({b.reviewCount ?? 0})</span>
-                  </div>
-                </Td>
-                <Td>
-                  <Badge value={b.status} />
-                </Td>
-                <Td className="text-muted">{fmtDate(b.createdAt)}</Td>
-                <Td className="text-right">
-                  <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                    {b.status === "pending" && (
-                      <Button size="sm" variant="soft" onClick={() => quickStatus(b, "approved")}>
-                        Approve
-                      </Button>
-                    )}
-                    <Button size="sm" variant="ghost" onClick={() => open(b)} aria-label="Edit">
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setDeleteAccount(false);
-                        setDeleting(b);
-                      }}
-                      aria-label="Delete"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </Td>
-              </tr>
-            ))}
+                  </Td>
+                  <Td className="text-muted">{b.city || "—"}</Td>
+                  <Td className="tabular-nums">
+                    {fmtMoney(b.hourlyRate, settings.currency)}
+                    <span className="text-muted">/hr</span>
+                  </Td>
+                  <Td>
+                    <div className="flex items-center gap-2">
+                      <Stars value={b.rating ?? 0} />
+                      <span className="text-xs tabular-nums text-muted">{b.reviewCount ? `${(b.rating ?? 0).toFixed(1)} (${b.reviewCount})` : "New"}</span>
+                    </div>
+                  </Td>
+                  <Td>
+                    <Badge value={b.status} />
+                  </Td>
+                  <Td className="whitespace-nowrap text-muted">{fmtDate(b.createdAt)}</Td>
+                  <Td>
+                    <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                      {b.status === "pending" && (
+                        <Button size="sm" variant="soft" onClick={() => quickStatus(b, "approved")}>
+                          Approve
+                        </Button>
+                      )}
+                      <RowActions>
+                        <IconButton label="Edit bouncer" onClick={() => open(b)}>
+                          <Pencil className="h-4 w-4" />
+                        </IconButton>
+                        <IconButton label="Delete bouncer" tone="danger" onClick={() => askDelete(b)}>
+                          <Trash2 className="h-4 w-4" />
+                        </IconButton>
+                      </RowActions>
+                    </div>
+                  </Td>
+                </Tr>
+              ))
+            )}
           </Table>
         )}
       </Card>
 
-      <Modal
+      <Drawer
         open={!!editing && !!form}
-        onClose={() => setEditing(null)}
+        onClose={close}
         title="Edit bouncer"
-        wide
+        header={
+          editing && (
+            <div className="flex items-center gap-3">
+              <Avatar name={editing.name} url={editing.photoUrl} size={48} />
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-1.5 truncate text-base font-semibold text-ink">
+                  {editing.name} {editing.verified && <Verified />}
+                </p>
+                <p className="truncate text-xs text-muted">
+                  {editing.reviewCount ? `${(editing.rating ?? 0).toFixed(1)} ★ · ${editing.reviewCount} reviews` : "No reviews yet"} · joined {fmtDate(editing.createdAt)}
+                </p>
+              </div>
+              <Badge value={form?.status ?? editing.status} />
+            </div>
+          )
+        }
         footer={
           <>
-            <Button
-              variant="ghost"
-              className="mr-auto text-rose hover:bg-rose-soft hover:text-rose"
-              onClick={() => {
-                setDeleteAccount(false);
-                setDeleting(editing);
-              }}
-            >
-              <Trash2 className="h-4 w-4" /> Delete
-            </Button>
-            <Button variant="secondary" onClick={() => setEditing(null)}>
+            <Button variant="secondary" onClick={close}>
               Cancel
             </Button>
             <Button onClick={save} loading={saving}>
@@ -249,71 +280,69 @@ export default function BouncersPage() {
             </Button>
           </>
         }
+        danger={
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-muted">Remove this bouncer&apos;s public profile. Past bookings stay in the records.</p>
+            <Button variant="secondary" size="sm" className="text-rose hover:bg-rose-soft" onClick={() => askDelete(editing)}>
+              <Trash2 className="h-3.5 w-3.5" /> Delete bouncer
+            </Button>
+          </div>
+        }
       >
         {editing && form && (
-          <div className="space-y-5">
-            <div className="flex items-center gap-4 rounded-2xl bg-cream p-4">
-              <Avatar name={form.name} url={editing.photoUrl} size={56} />
-              <div className="flex-1">
-                <p className="font-semibold text-ink">
-                  {editing.name} {editing.verified && <Verified />}
-                </p>
-                <p className="text-xs text-muted">
-                  {(editing.rating ?? 0).toFixed(1)} ★ from {editing.reviewCount ?? 0} reviews · UID {editing.id}
-                </p>
+          <>
+            <Section title="Moderation" hint={STATUS_HELP[form.status]}>
+              <div className="flex flex-wrap gap-2">
+                {BOUNCER_STATUSES.map((s) => (
+                  <Button key={s} size="sm" variant={form.status === s ? "primary" : "secondary"} onClick={() => set("status", s)} className="capitalize">
+                    {s}
+                  </Button>
+                ))}
               </div>
-            </div>
+              <div className="mt-4 space-y-3 rounded-xl border border-line p-4">
+                <Toggle checked={form.verified} onChange={(v) => set("verified", v)} label="Verified badge" description="Shown next to their name in the app." />
+                <Toggle checked={form.available} onChange={(v) => set("available", v)} label="Taking bookings" description="Bouncers can switch this themselves too." />
+              </div>
+            </Section>
 
-            <div className="flex flex-wrap gap-2">
-              <span className="mr-1 self-center text-xs font-medium uppercase tracking-wide text-muted">Moderation</span>
-              {(["approved", "rejected", "suspended", "pending"] as BouncerStatus[]).map((s) => (
-                <Button key={s} size="sm" variant={form.status === s ? "primary" : "secondary"} onClick={() => set("status", s)} className="capitalize">
-                  {s === "approved" ? "Approve" : s === "rejected" ? "Reject" : s === "suspended" ? "Suspend" : "Mark pending"}
-                </Button>
-              ))}
-            </div>
+            <Section title="Profile">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Full name" className="sm:col-span-2">
+                  <Input value={form.name} onChange={(e) => set("name", e.target.value)} />
+                </Field>
+                <Field label="City">
+                  <Input value={form.city} onChange={(e) => set("city", e.target.value)} />
+                </Field>
+                <Field label={`Hourly rate (${settings.currency})`}>
+                  <Input type="number" min={0} inputMode="decimal" value={form.hourlyRate} onChange={(e) => set("hourlyRate", e.target.value)} />
+                </Field>
+                <Field label="Experience (years)">
+                  <Input type="number" min={0} inputMode="numeric" value={form.experienceYears} onChange={(e) => set("experienceYears", e.target.value)} />
+                </Field>
+                <Field label="Height (cm)">
+                  <Input type="number" min={0} inputMode="numeric" value={form.heightCm} onChange={(e) => set("heightCm", e.target.value)} />
+                </Field>
+                <Field label="Bio" className="sm:col-span-2">
+                  <Textarea value={form.bio} onChange={(e) => set("bio", e.target.value)} rows={4} />
+                </Field>
+              </div>
+            </Section>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Full name">
-                <Input value={form.name} onChange={(e) => set("name", e.target.value)} />
-              </Field>
-              <Field label="City">
-                <Input value={form.city} onChange={(e) => set("city", e.target.value)} />
-              </Field>
-              <Field label={`Hourly rate (${settings.currency})`}>
-                <Input type="number" min={0} value={form.hourlyRate} onChange={(e) => set("hourlyRate", e.target.value)} />
-              </Field>
-              <Field label="Experience (years)">
-                <Input type="number" min={0} value={form.experienceYears} onChange={(e) => set("experienceYears", e.target.value)} />
-              </Field>
-              <Field label="Height (cm)">
-                <Input type="number" min={0} value={form.heightCm} onChange={(e) => set("heightCm", e.target.value)} />
-              </Field>
-              <Field label="Status">
-                <Select
-                  value={form.status}
-                  onChange={(e) => set("status", e.target.value as BouncerStatus)}
-                  options={BOUNCER_STATUSES.map((s) => ({ value: s, label: s }))}
-                />
-              </Field>
-              <Field label="Skills" hint="Comma separated" className="sm:col-span-2">
-                <Input value={form.skills} onChange={(e) => set("skills", e.target.value)} placeholder="Crowd control, VIP protection, First aid" />
-              </Field>
-              <Field label="Languages" hint="Comma separated" className="sm:col-span-2">
-                <Input value={form.languages} onChange={(e) => set("languages", e.target.value)} placeholder="English, Urdu" />
-              </Field>
-              <Field label="Bio" className="sm:col-span-2">
-                <Textarea value={form.bio} onChange={(e) => set("bio", e.target.value)} rows={4} />
-              </Field>
-            </div>
+            <Section title="Skills & languages" hint="Type and press Enter">
+              <div className="space-y-4">
+                <Field label="Skills">
+                  <ChipsInput value={form.skills} onChange={(v) => set("skills", v)} placeholder="Crowd control, First aid…" suggestions={SKILL_SUGGESTIONS} />
+                </Field>
+                <Field label="Languages">
+                  <ChipsInput value={form.languages} onChange={(v) => set("languages", v)} placeholder="English, Urdu…" />
+                </Field>
+              </div>
+            </Section>
 
-            <div className="flex flex-wrap gap-6 rounded-2xl border border-line p-4">
-              <Toggle checked={form.verified} onChange={(v) => set("verified", v)} label="Verified badge" />
-              <Toggle checked={form.available} onChange={(v) => set("available", v)} label="Taking bookings" />
-            </div>
-          </div>
+            <p className="text-[11px] text-muted">UID {editing.id}</p>
+          </>
         )}
-      </Modal>
+      </Drawer>
 
       <ConfirmDialog
         open={!!deleting}
@@ -324,12 +353,12 @@ export default function BouncersPage() {
         message={
           <>
             <span className="block">
-              <strong className="text-ink">{deleting?.name}</strong>&apos;s public profile will be removed and customers won&apos;t be able to find
-              them. Past bookings stay in the records.
+              <strong className="text-ink">{deleting?.name}</strong>&apos;s public profile will be removed and customers won&apos;t be able to find them.
+              Past bookings stay in the records.
             </span>
-            <label className="mt-4 flex items-center gap-2 text-ink">
-              <input type="checkbox" checked={deleteAccount} onChange={(e) => setDeleteAccount(e.target.checked)} className="accent-[#b5726b]" />
-              Also delete their user record and sign-in account
+            <label className="mt-4 flex cursor-pointer items-start gap-2.5 rounded-xl bg-cream p-3 text-[13px] text-ink">
+              <input type="checkbox" checked={deleteAccount} onChange={(e) => setDeleteAccount(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#b5726b]" />
+              <span>Also delete their user record and sign-in account</span>
             </label>
           </>
         }

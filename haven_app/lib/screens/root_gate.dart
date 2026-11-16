@@ -45,11 +45,10 @@ class RootGate extends StatelessWidget {
           UserRole.bouncer => const BouncerShell(),
           UserRole.customer => const CustomerShell(),
           UserRole.admin => const _Notice(
-              icon: Icons.admin_panel_settings_outlined,
-              title: 'Admin account',
-              message:
-                  'Admin accounts are managed from the Haven web dashboard.',
-            ),
+            icon: Icons.admin_panel_settings_outlined,
+            title: 'Admin account',
+            message: 'Admin accounts are managed from the Haven web dashboard.',
+          ),
         };
     }
   }
@@ -58,9 +57,8 @@ class RootGate extends StatelessWidget {
 class _Splash extends StatelessWidget {
   const _Splash();
   @override
-  Widget build(BuildContext context) => const Scaffold(
-        body: Center(child: HavenLogo(size: 72)),
-      );
+  Widget build(BuildContext context) =>
+      const Scaffold(body: Center(child: HavenLogo(size: 72)));
 }
 
 class _Notice extends StatelessWidget {
@@ -68,11 +66,12 @@ class _Notice extends StatelessWidget {
   final String title;
   final String message;
   final bool showSpinner;
-  const _Notice(
-      {required this.icon,
-      required this.title,
-      required this.message,
-      this.showSpinner = false});
+  const _Notice({
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.showSpinner = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -80,20 +79,22 @@ class _Notice extends StatelessWidget {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Column(children: [
-            Expanded(
-              child: EmptyState(icon: icon, title: title, message: message),
-            ),
-            if (showSpinner)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 24),
-                child: CircularProgressIndicator(color: HavenColors.sage),
+          child: Column(
+            children: [
+              Expanded(
+                child: EmptyState(icon: icon, title: title, message: message),
               ),
-            OutlinedButton(
-              onPressed: () => context.read<AuthService>().signOut(),
-              child: const Text('Sign out'),
-            ),
-          ]),
+              if (showSpinner)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 24),
+                  child: CircularProgressIndicator(color: HavenColors.sage),
+                ),
+              OutlinedButton(
+                onPressed: () => context.read<AuthService>().signOut(),
+                child: const Text('Sign out'),
+              ),
+            ],
+          ),
         ),
       ),
     );

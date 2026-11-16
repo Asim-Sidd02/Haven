@@ -13,8 +13,12 @@ class HavenLogo extends StatelessWidget {
   final double size;
   final bool showName;
   final bool onDark;
-  const HavenLogo(
-      {super.key, this.size = 56, this.showName = true, this.onDark = false});
+  const HavenLogo({
+    super.key,
+    this.size = 56,
+    this.showName = true,
+    this.onDark = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -24,20 +28,29 @@ class HavenLogo extends StatelessWidget {
     );
     if (!showName) return mark;
     final t = Theme.of(context).textTheme;
-    return Column(mainAxisSize: MainAxisSize.min, children: [
-      mark,
-      SizedBox(height: size * 0.22),
-      Text('Haven',
-          style: t.displaySmall
-              ?.copyWith(color: onDark ? Colors.white : HavenColors.ink)),
-      const SizedBox(height: 6),
-      Text('SAFETY, BOOKED WITH CARE',
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        mark,
+        SizedBox(height: size * 0.22),
+        Text(
+          'Haven',
+          style: t.displaySmall?.copyWith(
+            color: onDark ? Colors.white : HavenColors.ink,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'SAFETY, BOOKED WITH CARE',
           style: t.labelSmall?.copyWith(
-              color: onDark
-                  ? Colors.white.withValues(alpha: 0.75)
-                  : HavenColors.muted,
-              letterSpacing: 2)),
-    ]);
+            color: onDark
+                ? Colors.white.withValues(alpha: 0.75)
+                : HavenColors.muted,
+            letterSpacing: 2,
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -58,31 +71,39 @@ class _HavenEmblemPainter extends CustomPainter {
       ..lineTo(12, 16)
       ..close();
     canvas.drawPath(
-        shield, Paint()..color = onDark ? HavenColors.cream : HavenColors.sage);
+      shield,
+      Paint()..color = onDark ? HavenColors.cream : HavenColors.sage,
+    );
 
     canvas
       ..translate(50, 50)
       ..scale(0.78)
       ..translate(-50, -52);
-    final fg = Paint()..color = onDark ? HavenColors.sageDark : HavenColors.cream;
+    final fg = Paint()
+      ..color = onDark ? HavenColors.sageDark : HavenColors.cream;
     canvas
       ..drawCircle(const Offset(32, 27), 6.5, fg)
       ..drawCircle(const Offset(68, 27), 6.5, fg)
       ..drawRRect(
-          RRect.fromLTRBR(26.5, 38, 37.5, 78, const Radius.circular(5.5)), fg)
+        RRect.fromLTRBR(26.5, 38, 37.5, 78, const Radius.circular(5.5)),
+        fg,
+      )
       ..drawRRect(
-          RRect.fromLTRBR(62.5, 38, 73.5, 78, const Radius.circular(5.5)), fg);
+        RRect.fromLTRBR(62.5, 38, 73.5, 78, const Radius.circular(5.5)),
+        fg,
+      );
 
     final rope = Path()
       ..moveTo(37.5, 50)
       ..quadraticBezierTo(50, 66, 62.5, 50);
     canvas.drawPath(
-        rope,
-        Paint()
-          ..color = onDark ? HavenColors.sand : HavenColors.sandLight
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 6.5
-          ..strokeCap = StrokeCap.round);
+      rope,
+      Paint()
+        ..color = onDark ? HavenColors.sand : HavenColors.sandLight
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 6.5
+        ..strokeCap = StrokeCap.round,
+    );
   }
 
   @override
@@ -96,23 +117,24 @@ class Avatar extends StatelessWidget {
   final String name;
   final double radius;
   final bool square;
-  const Avatar(
-      {super.key,
-      this.url,
-      required this.name,
-      this.radius = 28,
-      this.square = false});
+  const Avatar({
+    super.key,
+    this.url,
+    required this.name,
+    this.radius = 28,
+    this.square = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final initials = name.trim().isEmpty
         ? '?'
         : name
-            .trim()
-            .split(RegExp(r'\s+'))
-            .take(2)
-            .map((p) => p[0].toUpperCase())
-            .join();
+              .trim()
+              .split(RegExp(r'\s+'))
+              .take(2)
+              .map((p) => p[0].toUpperCase())
+              .join();
     final hasUrl = url != null && url!.isNotEmpty;
     final size = radius * 2;
     return Container(
@@ -125,18 +147,23 @@ class Avatar extends StatelessWidget {
         borderRadius: square ? BorderRadius.circular(radius * 0.55) : null,
         image: hasUrl
             ? DecorationImage(
-                image: CachedNetworkImageProvider(url!), fit: BoxFit.cover)
+                image: CachedNetworkImageProvider(url!),
+                fit: BoxFit.cover,
+              )
             : null,
       ),
       alignment: Alignment.center,
       child: hasUrl
           ? null
-          : Text(initials,
+          : Text(
+              initials,
               style: TextStyle(
-                  color: HavenColors.sageDark,
-                  fontWeight: FontWeight.w800,
-                  fontSize: radius * 0.62,
-                  letterSpacing: 0.5)),
+                color: HavenColors.sageDark,
+                fontWeight: FontWeight.w800,
+                fontSize: radius * 0.62,
+                letterSpacing: 0.5,
+              ),
+            ),
     );
   }
 }
@@ -146,23 +173,23 @@ class StatusChip extends StatelessWidget {
   const StatusChip(this.status, {super.key});
 
   static Color colorFor(String s) => switch (s) {
-        BookingStatus.pending => HavenColors.pending,
-        BookingStatus.accepted || 'approved' => HavenColors.accepted,
-        BookingStatus.completed => HavenColors.completed,
-        _ => HavenColors.declined,
-      };
+    BookingStatus.pending => HavenColors.pending,
+    BookingStatus.accepted || 'approved' => HavenColors.accepted,
+    BookingStatus.completed => HavenColors.completed,
+    _ => HavenColors.declined,
+  };
 
   static String labelFor(String s) => switch (s) {
-        BookingStatus.pending => 'Awaiting reply',
-        BookingStatus.accepted => 'Confirmed',
-        BookingStatus.declined => 'Declined',
-        BookingStatus.completed => 'Completed',
-        BookingStatus.cancelled => 'Cancelled',
-        'approved' => 'Approved',
-        'rejected' => 'Not approved',
-        'suspended' => 'Suspended',
-        _ => s,
-      };
+    BookingStatus.pending => 'Awaiting reply',
+    BookingStatus.accepted => 'Confirmed',
+    BookingStatus.declined => 'Declined',
+    BookingStatus.completed => 'Completed',
+    BookingStatus.cancelled => 'Cancelled',
+    'approved' => 'Approved',
+    'rejected' => 'Not approved',
+    'suspended' => 'Suspended',
+    _ => s,
+  };
 
   @override
   Widget build(BuildContext context) =>
@@ -182,8 +209,8 @@ class RatingStars extends StatelessWidget {
         final icon = rating >= i + 1
             ? Icons.star_rounded
             : rating >= i + 0.5
-                ? Icons.star_half_rounded
-                : Icons.star_outline_rounded;
+            ? Icons.star_half_rounded
+            : Icons.star_outline_rounded;
         return Icon(icon, size: size, color: HavenColors.sand);
       }),
     );
@@ -208,18 +235,25 @@ class EmptyState extends StatelessWidget {
     return Center(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(40, 32, 40, 48),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          IconBadge(icon, size: 72),
-          const SizedBox(height: 18),
-          Text(title,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconBadge(icon, size: 72),
+            const SizedBox(height: 18),
+            Text(
+              title,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 6),
-          Text(message,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              message,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall),
-          if (action != null) ...[const SizedBox(height: 20), action!],
-        ]),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (action != null) ...[const SizedBox(height: 20), action!],
+          ],
+        ),
       ),
     );
   }
@@ -229,25 +263,40 @@ class InfoTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
-  const InfoTile(
-      {super.key, required this.icon, required this.label, required this.value});
+  const InfoTile({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 9),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        IconBadge(icon, size: 34),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 2),
-            Text(value,
-                style: const TextStyle(fontWeight: FontWeight.w600, height: 1.35)),
-          ]),
-        ),
-      ]),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          IconBadge(icon, size: 34),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -257,12 +306,13 @@ class SoftBanner extends StatelessWidget {
   final String text;
   final Color color;
   final Widget? trailing;
-  const SoftBanner(
-      {super.key,
-      required this.icon,
-      required this.text,
-      this.color = HavenColors.sage,
-      this.trailing});
+  const SoftBanner({
+    super.key,
+    required this.icon,
+    required this.text,
+    this.color = HavenColors.sage,
+    this.trailing,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -273,18 +323,24 @@ class SoftBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
-      child: Row(children: [
-        Icon(icon, color: color, size: 22),
-        const SizedBox(width: 12),
-        Expanded(
-            child: Text(text,
-                style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13.5,
-                    height: 1.4))),
-        if (trailing != null) ...[const SizedBox(width: 8), trailing!],
-      ]),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w600,
+                fontSize: 13.5,
+                height: 1.4,
+              ),
+            ),
+          ),
+          if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+        ],
+      ),
     );
   }
 }
@@ -295,44 +351,56 @@ void showMessage(BuildContext context, String msg) {
     ..showSnackBar(SnackBar(content: Text(msg)));
 }
 
-Future<bool> confirmDialog(BuildContext context,
-    {required String title,
-    required String message,
-    String confirm = 'Yes',
-    String cancel = 'Not now',
-    bool destructive = false,
-    IconData? icon}) async {
+Future<bool> confirmDialog(
+  BuildContext context, {
+  required String title,
+  required String message,
+  String confirm = 'Yes',
+  String cancel = 'Not now',
+  bool destructive = false,
+  IconData? icon,
+}) async {
   final color = destructive ? HavenColors.declined : HavenColors.sage;
   final r = await showDialog<bool>(
     context: context,
     builder: (c) => AlertDialog(
       icon: IconBadge(
-          icon ?? (destructive ? Icons.warning_amber_rounded : Icons.help_outline_rounded),
-          color: color,
-          size: 52),
+        icon ??
+            (destructive
+                ? Icons.warning_amber_rounded
+                : Icons.help_outline_rounded),
+        color: color,
+        size: 52,
+      ),
       title: Text(title, textAlign: TextAlign.center),
       content: Text(message, textAlign: TextAlign.center),
       actionsAlignment: MainAxisAlignment.center,
       actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
       actions: [
-        Row(children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () => Navigator.pop(c, false),
-              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(46)),
-              child: Text(cancel),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(c, false),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(46),
+                ),
+                child: Text(cancel),
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: FilledButton(
-              onPressed: () => Navigator.pop(c, true),
-              style: FilledButton.styleFrom(
-                  backgroundColor: color, minimumSize: const Size.fromHeight(46)),
-              child: Text(confirm),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton(
+                onPressed: () => Navigator.pop(c, true),
+                style: FilledButton.styleFrom(
+                  backgroundColor: color,
+                  minimumSize: const Size.fromHeight(46),
+                ),
+                child: Text(confirm),
+              ),
             ),
-          ),
-        ]),
+          ],
+        ),
       ],
     ),
   );
