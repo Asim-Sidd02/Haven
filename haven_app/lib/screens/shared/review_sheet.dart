@@ -33,6 +33,7 @@ class _ReviewSheet extends StatefulWidget {
 class _ReviewSheetState extends State<_ReviewSheet> {
   int _rating = 5;
   final _comment = TextEditingController();
+  final _personnel = TextEditingController();
   bool _busy = false;
 
   static const _labels = ['', 'Poor', 'Fair', 'Good', 'Great', 'Wonderful'];
@@ -40,6 +41,7 @@ class _ReviewSheetState extends State<_ReviewSheet> {
   @override
   void dispose() {
     _comment.dispose();
+    _personnel.dispose();
     super.dispose();
   }
 
@@ -53,6 +55,7 @@ class _ReviewSheetState extends State<_ReviewSheet> {
         customerName: widget.customerName,
         rating: _rating,
         comment: _comment.text,
+        personnelFeedback: _personnel.text,
       );
       navigator.pop();
       messenger.showSnackBar(
@@ -78,7 +81,7 @@ class _ReviewSheetState extends State<_ReviewSheet> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'How was ${widget.booking.bouncerName.split(' ').first}?',
+            'How was ${widget.booking.agencyName}?',
             style: Theme.of(context).textTheme.headlineSmall,
           ),
           const SizedBox(height: 6),
@@ -119,6 +122,16 @@ class _ReviewSheetState extends State<_ReviewSheet> {
               hintText: 'What stood out? (optional)',
             ),
           ),
+          if (widget.booking.assigned.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _personnel,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                hintText: 'Anything about the team on the ground? (optional)',
+              ),
+            ),
+          ],
           const SizedBox(height: 18),
           FilledButton(
             onPressed: _busy ? null : _submit,

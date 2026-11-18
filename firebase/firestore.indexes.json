@@ -1,7 +1,7 @@
 {
   "indexes": [
     {
-      "collectionGroup": "bouncers",
+      "collectionGroup": "agencies",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
@@ -17,18 +17,18 @@
       ]
     },
     {
-      "collectionGroup": "bookings",
+      "collectionGroup": "reviews",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "bouncerId", "order": "ASCENDING" },
+        { "fieldPath": "agencyId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
     {
-      "collectionGroup": "reviews",
+      "collectionGroup": "notifications",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "bouncerId", "order": "ASCENDING" },
+        { "fieldPath": "recipientId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     }

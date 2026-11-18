@@ -5,7 +5,7 @@ import { Pencil, Trash2, Users as UsersIcon } from "lucide-react";
 import { useCollection } from "@/hooks/useCollection";
 import { deleteUserEverywhere, updateUser } from "@/lib/actions";
 import { errMsg, fmtDate, matches } from "@/lib/format";
-import { ROLES, type AppUser, type Role } from "@/lib/types";
+import { ROLES, type Agency, type AppUser, type Role } from "@/lib/types";
 import {
   Avatar,
   Badge,
@@ -46,6 +46,8 @@ export default function UsersPage() {
   const { state } = useAuth();
   const me = state.status === "admin" ? state.user.uid : "";
   const { data, loading, error } = useCollection<AppUser>("users");
+  const agencies = useCollection<Agency>("agencies");
+  const agencyName = useMemo(() => new Map(agencies.data.map((a) => [a.id, a.name])), [agencies.data]);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Role | "all">("all");
   const [editing, setEditing] = useState<AppUser | null>(null);
@@ -123,7 +125,7 @@ export default function UsersPage() {
 
   return (
     <>
-      <PageHeader title="Users" subtitle="Everyone who has joined Haven — customers, bouncers and admins." />
+      <PageHeader title="Users" subtitle="Everyone who has joined Haven — customers, agency staff and admins." />
       <ErrorNote error={error} />
 
       <Card>
@@ -136,9 +138,9 @@ export default function UsersPage() {
         {!loading && rows.length === 0 ? (
           <Empty icon={UsersIcon} title="No users found" hint="Try a different filter or search." />
         ) : (
-          <Table head={["User", "Phone", "Role", "Access", "Joined", { label: "", align: "right" }]} minWidth={720}>
+          <Table head={["User", "Phone", "Role", "Agency", "Access", "Joined", { label: "", align: "right" }]} minWidth={820}>
             {loading ? (
-              <SkeletonRows cols={6} />
+              <SkeletonRows cols={7} />
             ) : (
               rows.map((u) => (
                 <Tr key={u.id} onClick={() => open(u)}>
@@ -156,7 +158,9 @@ export default function UsersPage() {
                   <Td className="tabular-nums text-muted">{u.phone || "—"}</Td>
                   <Td>
                     <Badge value={u.role} dot={false} />
+                    {u.role === "agency" && u.staffRole && <p className="mt-1 text-xs capitalize text-muted">{u.staffRole}</p>}
                   </Td>
+                  <Td className="text-muted">{u.agencyId ? agencyName.get(u.agencyId) ?? u.agencyId : "—"}</Td>
                   <Td>
                     <button
                       type="button"
@@ -255,6 +259,19 @@ export default function UsersPage() {
                     options={ROLES.map((r) => ({ value: r, label: r }))}
                   />
                 </Field>
+                {editing.role === "agency" && (
+                  <div className="grid grid-cols-2 gap-4 rounded-xl bg-cream p-4 text-[13px]">
+                    <div className="min-w-0">
+                      <p className="text-[11px] uppercase tracking-[0.1em] text-muted">Agency</p>
+                      <p className="mt-0.5 break-words text-ink">{editing.agencyId ? agencyName.get(editing.agencyId) ?? "Unknown" : "—"}</p>
+                      {editing.agencyId && <p className="break-all text-[11px] text-muted">{editing.agencyId}</p>}
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.1em] text-muted">Staff role</p>
+                      <p className="mt-0.5 capitalize text-ink">{editing.staffRole ?? "—"}</p>
+                    </div>
+                  </div>
+                )}
                 <div className="rounded-xl border border-line p-4">
                   <Toggle
                     checked={form.isActive}
@@ -282,8 +299,8 @@ export default function UsersPage() {
         title="Delete this user?"
         message={
           <>
-            <strong className="text-ink">{deleting?.name || deleting?.email}</strong> will be removed from Haven, including their bouncer profile if
-            they have one. Their sign-in account is removed too when server credentials are configured. This can&apos;t be undone.
+            <strong className="text-ink">{deleting?.name || deleting?.email}</strong> will be removed from Haven. Any agency they own stays in the
+            records. Their sign-in account is removed too when server credentials are configured. This can&apos;t be undone.
           </>
         }
       />

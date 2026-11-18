@@ -5,14 +5,14 @@ import { Pencil, Star, Trash2 } from "lucide-react";
 import { useCollection } from "@/hooks/useCollection";
 import { deleteReview, updateReview } from "@/lib/actions";
 import { errMsg, fmtDate, matches } from "@/lib/format";
-import type { Bouncer, Review } from "@/lib/types";
+import type { Agency, Review } from "@/lib/types";
 import { Button, Card, ConfirmDialog, Empty, ErrorNote, Field, Loading, Modal, PageHeader, SearchBox, Stars, Textarea } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 
 export default function ReviewsPage() {
   const toast = useToast();
   const { data, loading, error } = useCollection<Review>("reviews");
-  const bouncers = useCollection<Bouncer>("bouncers");
+  const agencies = useCollection<Agency>("agencies");
   const [q, setQ] = useState("");
   const [minStars, setMinStars] = useState(0);
   const [editing, setEditing] = useState<Review | null>(null);
@@ -22,15 +22,15 @@ export default function ReviewsPage() {
   const [deleting, setDeleting] = useState<Review | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const bouncerName = useMemo(() => new Map(bouncers.data.map((b) => [b.id, b.name])), [bouncers.data]);
+  const agencyName = useMemo(() => new Map(agencies.data.map((a) => [a.id, a.name])), [agencies.data]);
 
   const rows = useMemo(
     () =>
       data
         .filter((r) => (minStars ? r.rating === minStars : true))
-        .filter((r) => matches(q, r.customerName, r.comment, bouncerName.get(r.bouncerId)))
+        .filter((r) => matches(q, r.customerName, r.comment, agencyName.get(r.agencyId)))
         .sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0)),
-    [data, q, minStars, bouncerName],
+    [data, q, minStars, agencyName],
   );
 
   function open(r: Review) {
@@ -58,7 +58,7 @@ export default function ReviewsPage() {
     setBusy(true);
     try {
       await deleteReview(deleting);
-      toast("Review removed and bouncer rating adjusted.");
+      toast("Review removed and agency rating adjusted.");
       setDeleting(null);
       setEditing(null);
     } catch (e) {
@@ -108,7 +108,7 @@ export default function ReviewsPage() {
                   <Stars value={r.rating} />
                   <p className="mt-2 text-sm text-muted">
                     <span className="font-medium text-ink">{r.customerName}</span> about{" "}
-                    <span className="font-medium text-ink">{bouncerName.get(r.bouncerId) ?? "a removed bouncer"}</span>
+                    <span className="font-medium text-ink">{agencyName.get(r.agencyId) ?? "a removed agency"}</span>
                   </p>
                 </div>
                 <div className="flex gap-1">
@@ -164,7 +164,7 @@ export default function ReviewsPage() {
         onConfirm={confirmDelete}
         loading={busy}
         title="Delete this review?"
-        message="The bouncer's average rating will be recalculated, and the customer will be able to leave a new review for that booking."
+        message="The agency's average rating will be recalculated, and the customer will be able to leave a new review for that booking."
       />
     </>
   );

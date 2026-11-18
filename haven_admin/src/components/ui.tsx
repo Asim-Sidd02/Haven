@@ -124,7 +124,21 @@ const TONES: Record<string, string> = {
   rejected: "bg-rose-soft text-rose",
   suspended: "bg-[#eeeae5] text-muted",
   admin: "bg-sand-soft text-sand-dark",
-  bouncer: "bg-sage-soft text-sage-dark",
+  agency: "bg-sage-soft text-sage-dark",
+  verified: "bg-sage-soft text-sage-dark",
+  assigned: "bg-slate-soft text-slate",
+  ongoing: "bg-sand-soft text-sand-dark",
+  draft: "bg-cream text-muted",
+  expired: "bg-[#eeeae5] text-muted",
+  paid: "bg-sage-soft text-sage-dark",
+  unpaid: "bg-amber-soft text-amber",
+  refunded: "bg-slate-soft text-slate",
+  open: "bg-amber-soft text-amber",
+  in_progress: "bg-slate-soft text-slate",
+  escalated: "bg-rose-soft text-rose",
+  resolved: "bg-sage-soft text-sage-dark",
+  emergency: "bg-rose-soft text-rose",
+  high: "bg-amber-soft text-amber",
   customer: "bg-slate-soft text-slate",
   active: "bg-sage-soft text-sage-dark",
   inactive: "bg-rose-soft text-rose",
@@ -139,6 +153,11 @@ const DOTS: Record<string, string> = {
   cancelled: "bg-rose",
   rejected: "bg-rose",
   suspended: "bg-muted",
+  verified: "bg-sage",
+  assigned: "bg-slate",
+  ongoing: "bg-sand",
+  expired: "bg-muted",
+  escalated: "bg-rose",
   active: "bg-sage",
   inactive: "bg-rose",
 };
@@ -151,7 +170,7 @@ export function Badge({ value, label, dot = true }: { value: string; label?: str
       }`}
     >
       {dot && DOTS[value] && <span className={`h-1.5 w-1.5 rounded-full ${DOTS[value]}`} />}
-      {label ?? value}
+      {label ?? value.replace(/_/g, " ")}
     </span>
   );
 }
@@ -407,15 +426,14 @@ export function FilterPills<T extends string>({
 }
 
 /** Toolbar row above a table: filter · search · result count */
-export function Toolbar({ left, right, count, noun = "result" }: { left?: React.ReactNode; right?: React.ReactNode; count?: number; noun?: string }) {
+export function Toolbar({ left, right, count, noun = "result", plural }: { left?: React.ReactNode; right?: React.ReactNode; count?: number; noun?: string; plural?: string }) {
   return (
     <div className="flex flex-col gap-3 border-b border-line px-4 py-3.5 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         {left}
         {count !== undefined && (
           <span className="text-xs tabular-nums text-muted">
-            {count} {noun}
-            {count === 1 ? "" : "s"}
+            {count} {count === 1 ? noun : (plural ?? `${noun}s`)}
           </span>
         )}
       </div>

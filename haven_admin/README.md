@@ -1,6 +1,6 @@
 # Haven Admin
 
-The admin dashboard for **Haven**. Its tagline is *Safety, booked with care.* From here, admins can manage every bouncer, user, booking, review and app setting stored in Firebase.
+The admin dashboard for **Haven**. Its tagline is *Safety, booked with care.* Clients book security **agencies**; agencies manage their own **personnel** in a central registry; from here, admins verify agencies, personnel and documents, and manage every user, booking, review, support ticket and app setting stored in Firebase.
 
 Built with Next.js 15 (App Router), TypeScript, Tailwind CSS v4 and the Firebase Web SDK. All data updates live through Firestore `onSnapshot`.
 
@@ -8,12 +8,16 @@ Built with Next.js 15 (App Router), TypeScript, Tailwind CSS v4 and the Firebase
 
 | Page | What you can do |
 |---|---|
-| **Overview** | See total users, bouncer profiles, pending approvals and revenue from completed bookings. Also shows bookings by status, recent bookings, and quick approve/decline for new bouncers. |
-| **Bouncers** | Filter by status and search. Edit every profile field (name, bio, city, experience, rate, height, skills, languages, availability, status, verified badge). Approve, reject or suspend. Delete the profile, and optionally the user account too. |
-| **Users** | Filter by role and search. Edit name, phone, role and active flag. Activate or deactivate in one click. Delete removes the user doc, the bouncer profile, and the Firebase Auth account if server credentials are set. |
-| **Bookings** | Filter by status and search. Edit status, date/time, hours, location, guests, notes, rate, total and bouncer note. Delete. |
-| **Reviews** | Filter by stars and search. Edit rating or comment, and the bouncer's average is recalculated. Deleting a review adjusts the bouncer's rating and lets the customer review that booking again. |
-| **Settings** | Edit `settings/app` (currency, commission %, support email and phone). The mobile app reads this document. |
+| **Overview** | Agencies pending review, personnel pending verification, bookings and revenue (paid or completed bookings). Bookings by status, recent bookings, quick approve/decline for new agencies. |
+| **Agencies** | Filter by status (draft, pending, approved, rejected, suspended) and search. Drawer shows the profile, enabled services and the agency's company documents. Approve, reject or suspend (with remarks saved to `adminRemarks`), toggle the verified badge, verify/reject individual documents, delete. |
+| **Personnel** | Central registry across all agencies. Filter by agency and verification status (or removal requests) and search. Drawer shows the profile and that person's documents. Verify, reject or suspend (with remarks), verify/reject documents, approve removal requests (deletes the record). |
+| **Users** | Filter by role (customer, agency, admin) and search; agency accounts show their agency and staff role. Edit name, phone, role and active flag. Delete removes the user doc and, if server credentials are set, the Firebase Auth account. |
+| **Bookings** | Filter by v2 status and search. See the agency, service, personnel count, assigned team, client approval and reschedule requests. Edit status, **payment status**, schedule, personnel count, requirements, pricing (subtotal, platform fee, tax, total, with a recalculation from settings) and the agency note. Delete. |
+| **Reviews** | Filter by stars and search. Edit rating or comment, and the agency's average is recalculated. Deleting a review adjusts the agency's rating and lets the customer review that booking again. |
+| **Support** | Tickets with escalated/emergency first. Reply as admin (appended to `messages`) and change status. |
+| **Settings** | Edit `settings/app` (currency, commission %, tax %, support email and phone), read by the client app and the agency dashboard. |
+
+Approving, rejecting or suspending an agency or a person also writes a `notifications` doc (`recipientId: agencyId`, `type: 'verification'`, `read: false`) so the agency dashboard can show it.
 
 Data shapes follow [`../firebase/SCHEMA.md`](../firebase/SCHEMA.md). Access control comes from [`../firebase/firestore.rules`](../firebase/firestore.rules): a signed-in user whose `users/{uid}.role == "admin"` gets full read/write access.
 
@@ -38,10 +42,10 @@ Data shapes follow [`../firebase/SCHEMA.md`](../firebase/SCHEMA.md). Access cont
 
 ## Creating the first admin
 
-Admin rights can't be granted from the mobile app, because the rules block it.
+Admin rights can't be granted from the client app or agency dashboard, because the rules block it.
 
 1. Create an account, using either of these:
-   - sign up in the Haven mobile app, or
+   - sign up in the Haven client app, or
    - go to Firebase console → Authentication → *Add user*, then copy the new user's **UID**.
 2. In Firebase console → Firestore → `users` collection:
    - **If a `users/{uid}` document already exists** (you signed up in the app): set `role` to `"admin"`, and make sure `isActive` is `true`.
@@ -74,10 +78,10 @@ You can deploy to Vercel or any Node host. Add the same env vars in the host's s
 src/
   app/
     (admin)/            ← protected section (sidebar layout + admin guard)
-      dashboard/ bouncers/ users/ bookings/ reviews/ settings/
+      dashboard/ agencies/ personnel/ users/ bookings/ reviews/ support/ settings/
     api/admin/delete-user/route.ts   ← verifies ID token + admin role, deletes Auth user
     login/page.tsx
-  components/           ← AuthProvider (role check), Toast, Brand, ui kit
+  components/           ← AuthProvider (role check), Toast, Brand, ui kit, Verification (remarks dialog, document list)
   hooks/                ← useCollection / useDoc (live), useSettings
   lib/                  ← firebase (lazy init), firebaseAdmin, actions, types, format
 ```

@@ -21,7 +21,7 @@ function friendly(e: unknown): string {
 }
 
 const POINTS = [
-  { icon: ShieldCheck, title: "Review with care", text: "Every bouncer is checked by a person before customers can see them." },
+  { icon: ShieldCheck, title: "Review with care", text: "Every agency and guard is checked by a person before customers can see them." },
   { icon: HeartHandshake, title: "Keep bookings honest", text: "Step in when something looks off, and keep the record straight." },
   { icon: Sparkles, title: "Make every event a safe place", text: "Ratings, settings and support, all in one calm workspace." },
 ];

@@ -5,6 +5,7 @@ import '../../widgets/ui.dart';
 import '../shared/profile_screen.dart';
 import 'explore_screen.dart';
 import 'my_bookings_screen.dart';
+import 'support_screen.dart';
 
 class CustomerShell extends StatefulWidget {
   const CustomerShell({super.key});
@@ -20,7 +21,12 @@ class _CustomerShellState extends State<CustomerShell> {
     return Scaffold(
       body: FadeIndexedStack(
         index: _index,
-        children: const [ExploreScreen(), MyBookingsScreen(), ProfileScreen()],
+        children: const [
+          ExploreScreen(),
+          MyBookingsScreen(),
+          SupportScreen(),
+          ProfileScreen(),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
@@ -34,6 +40,11 @@ class _CustomerShellState extends State<CustomerShell> {
             icon: Icon(Icons.event_note_outlined),
             selectedIcon: Icon(Icons.event_note),
             label: 'Bookings',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.support_agent_outlined),
+            selectedIcon: Icon(Icons.support_agent),
+            label: 'Support',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),

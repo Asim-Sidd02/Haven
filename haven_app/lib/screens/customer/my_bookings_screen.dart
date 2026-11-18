@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../models/booking.dart';
 import '../../services/db_service.dart';
 import '../../state/session.dart';
-import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/ui.dart';
 import '../shared/booking_tile.dart';
@@ -22,21 +21,18 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
   @override
   Widget build(BuildContext context) {
     final uid = context.watch<Session>().user!.uid;
-    if (_uid != uid) {
+    if (uid != _uid) {
       _uid = uid;
       _stream = DbService.instance.customerBookings(uid);
     }
-
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('My bookings'),
           bottom: const TabBar(
-            labelColor: HavenColors.sageDark,
-            indicatorColor: HavenColors.sage,
             tabs: [
-              Tab(text: 'Upcoming'),
+              Tab(text: 'Active'),
               Tab(text: 'Past'),
             ],
           ),
@@ -44,39 +40,30 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
         body: StreamBuilder<List<Booking>>(
           stream: _stream,
           builder: (context, snap) {
-            if (!snap.hasData) {
-              return snap.hasError
-                  ? const EmptyState(
-                      icon: Icons.cloud_off_outlined,
-                      title: 'Couldn\'t load bookings',
-                      message: 'Please check your connection.',
-                    )
-                  : const Center(
-                      child: CircularProgressIndicator(color: HavenColors.sage),
-                    );
+            if (snap.hasError) {
+              return const EmptyState(
+                icon: Icons.cloud_off_outlined,
+                title: 'We couldn\'t load your bookings',
+                message: 'Please check your connection and try again.',
+              );
             }
+            if (!snap.hasData) return const SkeletonList();
             final all = snap.data!;
-            final upcoming = all.where((b) => b.isUpcoming).toList();
-            final past = all.where((b) => !b.isUpcoming).toList();
+            final active = all.where((b) => b.isActive).toList();
+            final past = all.where((b) => !b.isActive).toList();
             return TabBarView(
               children: [
                 _List(
-                  bookings: upcoming,
-                  empty: const EmptyState(
-                    icon: Icons.event_available_outlined,
-                    title: 'Nothing planned yet',
-                    message:
-                        'When you request a booking, you\'ll be able to follow it here.',
-                  ),
+                  bookings: active,
+                  emptyTitle: 'Nothing booked yet',
+                  emptyMessage:
+                      'When you book an agency, you\'ll follow every step here.',
                 ),
                 _List(
                   bookings: past,
-                  empty: const EmptyState(
-                    icon: Icons.history_rounded,
-                    title: 'No past bookings',
-                    message:
-                        'Your completed and cancelled bookings will appear here.',
-                  ),
+                  emptyTitle: 'No past bookings',
+                  emptyMessage:
+                      'Completed and cancelled bookings will appear here.',
                 ),
               ],
             );
@@ -89,12 +76,23 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
 
 class _List extends StatelessWidget {
   final List<Booking> bookings;
-  final Widget empty;
-  const _List({required this.bookings, required this.empty});
+  final String emptyTitle;
+  final String emptyMessage;
+  const _List({
+    required this.bookings,
+    required this.emptyTitle,
+    required this.emptyMessage,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (bookings.isEmpty) return empty;
+    if (bookings.isEmpty) {
+      return EmptyState(
+        icon: Icons.event_note_outlined,
+        title: emptyTitle,
+        message: emptyMessage,
+      );
+    }
     return ListView.separated(
       padding: const EdgeInsets.all(20),
       itemCount: bookings.length,
@@ -102,7 +100,7 @@ class _List extends StatelessWidget {
       itemBuilder: (_, i) => FadeSlideIn(
         key: ValueKey(bookings[i].id),
         index: i,
-        child: BookingTile(booking: bookings[i], asBouncer: false),
+        child: BookingTile(booking: bookings[i]),
       ),
     );
   }

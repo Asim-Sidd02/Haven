@@ -114,7 +114,7 @@ class PageTitle extends StatelessWidget {
             ],
           ),
         ),
-        if (trailing != null) trailing!,
+        ?trailing,
       ],
     );
   }
@@ -400,13 +400,19 @@ class SkeletonList extends StatelessWidget {
   }
 }
 
-/// Horizontal progress of a booking: requested → confirmed → completed.
+/// Horizontal progress of a booking through [steps].
 class StatusTimeline extends StatelessWidget {
-  final int current; // 0..2; -1 for ended early (declined/cancelled)
+  final int current; // index into steps; -1 for ended early
   final Color color;
-  const StatusTimeline({super.key, required this.current, required this.color});
+  final List<String> steps;
+  const StatusTimeline({
+    super.key,
+    required this.current,
+    required this.color,
+    this.steps = const ['Requested', 'Confirmed', 'Completed'],
+  });
 
-  static const _steps = ['Requested', 'Confirmed', 'Completed'];
+  List<String> get _steps => steps;
 
   @override
   Widget build(BuildContext context) {

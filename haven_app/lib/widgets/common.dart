@@ -173,15 +173,26 @@ class StatusChip extends StatelessWidget {
   const StatusChip(this.status, {super.key});
 
   static Color colorFor(String s) => switch (s) {
-    BookingStatus.pending => HavenColors.pending,
-    BookingStatus.accepted || 'approved' => HavenColors.accepted,
-    BookingStatus.completed => HavenColors.completed,
+    BookingStatus.pending || 'open' || 'sent' => HavenColors.pending,
+    BookingStatus.accepted ||
+    BookingStatus.assigned ||
+    BookingStatus.ongoing ||
+    'approved' ||
+    'in_progress' => HavenColors.accepted,
+    BookingStatus.completed || 'resolved' => HavenColors.completed,
     _ => HavenColors.declined,
   };
 
   static String labelFor(String s) => switch (s) {
-    BookingStatus.pending => 'Awaiting reply',
-    BookingStatus.accepted => 'Confirmed',
+    BookingStatus.pending => 'Awaiting agency',
+    BookingStatus.accepted => 'Accepted',
+    BookingStatus.assigned => 'Team assigned',
+    BookingStatus.ongoing => 'In progress',
+    'open' => 'Open',
+    'in_progress' => 'In progress',
+    'escalated' => 'Escalated',
+    'resolved' => 'Resolved',
+    'sent' => 'Awaiting you',
     BookingStatus.declined => 'Declined',
     BookingStatus.completed => 'Completed',
     BookingStatus.cancelled => 'Cancelled',
@@ -405,4 +416,64 @@ Future<bool> confirmDialog(
     ),
   );
   return r ?? false;
+}
+
+/// Asks for a short piece of text (a reason, feedback…). Returns null if the
+/// user backs out. [required] blocks empty answers with a gentle message.
+Future<String?> promptText(
+  BuildContext context, {
+  required String title,
+  required String message,
+  required String hint,
+  String confirm = 'Send',
+  bool required = true,
+  bool destructive = false,
+}) async {
+  final controller = TextEditingController();
+  final key = GlobalKey<FormState>();
+  final r = await showDialog<String>(
+    context: context,
+    builder: (c) => AlertDialog(
+      title: Text(title),
+      content: Form(
+        key: key,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message, style: Theme.of(c).textTheme.bodySmall),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: controller,
+              autofocus: true,
+              maxLines: 3,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(hintText: hint),
+              validator: (v) => required && (v == null || v.trim().length < 3)
+                  ? 'A few words help the agency understand'
+                  : null,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(c),
+          child: const Text('Back'),
+        ),
+        FilledButton(
+          style: destructive
+              ? FilledButton.styleFrom(backgroundColor: HavenColors.declined)
+              : null,
+          onPressed: () {
+            if (key.currentState!.validate()) {
+              Navigator.pop(c, controller.text.trim());
+            }
+          },
+          child: Text(confirm),
+        ),
+      ],
+    ),
+  );
+  return r;
 }

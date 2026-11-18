@@ -3,361 +3,682 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/booking.dart';
+import '../../models/records.dart';
 import '../../services/auth_service.dart';
 import '../../services/db_service.dart';
 import '../../state/session.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/ui.dart';
+import '../customer/support_screen.dart';
 import 'review_sheet.dart';
 
-class BookingDetailScreen extends StatelessWidget {
+const _steps = ['Requested', 'Accepted', 'Team', 'Ongoing', 'Done'];
+
+class BookingDetailScreen extends StatefulWidget {
   final String bookingId;
-  final bool asBouncer;
-  const BookingDetailScreen({
-    super.key,
-    required this.bookingId,
-    required this.asBouncer,
-  });
+  const BookingDetailScreen({super.key, required this.bookingId});
+
+  @override
+  State<BookingDetailScreen> createState() => _BookingDetailScreenState();
+}
+
+class _BookingDetailScreenState extends State<BookingDetailScreen> {
+  late final Stream<Booking?> _booking = DbService.instance.bookingStream(
+    widget.bookingId,
+  );
+  late final String _uid = context.read<Session>().user!.uid;
+  late final Stream<List<Agreement>> _agreements = DbService.instance
+      .bookingAgreements(_uid, widget.bookingId);
+  late final Stream<List<AttendanceRecord>> _attendance = DbService.instance
+      .bookingAttendance(_uid, widget.bookingId);
+  bool _busy = false;
+
+  Future<void> _run(Future<void> Function() action, String done) async {
+    setState(() => _busy = true);
+    try {
+      await action();
+      if (mounted) showMessage(context, done);
+    } catch (e) {
+      if (mounted) showMessage(context, AuthService.friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _approve(Booking b) async {
+    final ok = await confirmDialog(
+      context,
+      title: 'Approve this team?',
+      message:
+          'We\'ll let ${b.agencyName} know you\'re happy, and your booking moves to in progress.',
+      confirm: 'Approve team',
+      icon: Icons.verified_user_outlined,
+    );
+    if (ok) {
+      await _run(
+        () => DbService.instance.approveTeam(b),
+        'Team approved — you\'re all set.',
+      );
+    }
+  }
+
+  Future<void> _requestChanges(Booking b) async {
+    final text = await promptText(
+      context,
+      title: 'Request changes',
+      message:
+          'Tell ${b.agencyName} what you\'d like changed. They\'ll re-assign the team.',
+      hint: 'e.g. We need someone who speaks Hindi',
+    );
+    if (text == null) return;
+    await _run(
+      () => DbService.instance.requestTeamChanges(b, text),
+      'Sent. The agency will update your team.',
+    );
+  }
+
+  Future<void> _cancel(Booking b) async {
+    final reason = await promptText(
+      context,
+      title: 'Cancel this booking?',
+      message:
+          'This can\'t be undone. Letting the agency know why helps them improve.',
+      hint: 'Reason for cancelling',
+      confirm: 'Cancel booking',
+      destructive: true,
+    );
+    if (reason == null) return;
+    await _run(
+      () => DbService.instance.cancelBooking(b, reason),
+      'Booking cancelled.',
+    );
+  }
+
+  Future<void> _reschedule(Booking b) async {
+    final now = DateTime.now();
+    final d = await showDatePicker(
+      context: context,
+      initialDate: b.eventDate.isAfter(now) ? b.eventDate : now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+      helpText: 'Choose a new date',
+    );
+    if (d == null || !mounted) return;
+    final t = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(b.eventDate),
+      helpText: 'Choose a new start time',
+    );
+    if (t == null || !mounted) return;
+    final date = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+    if (date.isBefore(now)) {
+      showMessage(context, 'Please choose a time in the future.');
+      return;
+    }
+    final reason = await promptText(
+      context,
+      title: 'Request new time',
+      message:
+          'Asking to move to ${DateFormat('EEE d MMM · h:mm a').format(date)}. The agency will confirm.',
+      hint: 'Reason (optional)',
+      required: false,
+    );
+    if (reason == null) return;
+    await _run(
+      () => DbService.instance.requestReschedule(b, date, reason),
+      'Reschedule request sent.',
+    );
+  }
+
+  Future<void> _respondAgreement(Agreement a, bool accept) async {
+    final ok = await confirmDialog(
+      context,
+      title: accept ? 'Accept agreement?' : 'Decline agreement?',
+      message: accept
+          ? 'You agree to the terms of "${a.title}".'
+          : 'The agency will be told you declined "${a.title}".',
+      confirm: accept ? 'Accept' : 'Decline',
+      destructive: !accept,
+    );
+    if (!ok || !mounted) return;
+    final name = context.read<Session>().user!.name;
+    await _run(
+      () => DbService.instance.respondToAgreement(
+        a,
+        accept: accept,
+        customerName: name,
+      ),
+      accept ? 'Agreement accepted.' : 'Agreement declined.',
+    );
+  }
+
+  Future<void> _confirmAttendance(AttendanceRecord r) async {
+    final ok = await confirmDialog(
+      context,
+      title: 'Confirm attendance?',
+      message:
+          'You\'re confirming ${r.personnelName} was on duty on ${r.date}.',
+      confirm: 'Confirm',
+      icon: Icons.how_to_reg_outlined,
+    );
+    if (ok) {
+      await _run(
+        () => DbService.instance.confirmAttendance(r.id),
+        'Thanks for confirming.',
+      );
+    }
+  }
+
+  int _stepFor(String s) => BookingStatus.flow.indexOf(s);
 
   @override
   Widget build(BuildContext context) {
     final session = context.watch<Session>();
-    return Scaffold(
-      appBar: AppBar(title: const Text('Booking details')),
-      body: StreamBuilder<Booking?>(
-        stream: DbService.instance.bookingStream(bookingId),
-        builder: (context, snap) {
-          final b = snap.data;
-          if (b == null) {
-            return snap.connectionState == ConnectionState.waiting
-                ? const Center(
-                    child: CircularProgressIndicator(color: HavenColors.sage),
-                  )
-                : const EmptyState(
-                    icon: Icons.event_busy_outlined,
-                    title: 'Booking not found',
-                    message: 'It may have been removed.',
-                  );
-          }
-          final otherName = asBouncer ? b.customerName : b.bouncerName;
-          return ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              Row(
+    return StreamBuilder<Booking?>(
+      stream: _booking,
+      builder: (context, snap) {
+        if (snap.hasError || (snap.hasData && snap.data == null)) {
+          return Scaffold(
+            appBar: AppBar(),
+            body: const EmptyState(
+              icon: Icons.event_busy_outlined,
+              title: 'Booking not found',
+              message: 'It may have been removed. Please check My bookings.',
+            ),
+          );
+        }
+        if (!snap.hasData) {
+          return Scaffold(appBar: AppBar(), body: const SkeletonList());
+        }
+        final b = snap.data!;
+        final ended =
+            b.status == BookingStatus.cancelled ||
+            b.status == BookingStatus.declined;
+        final showOps = const [
+          BookingStatus.assigned,
+          BookingStatus.ongoing,
+          BookingStatus.completed,
+        ].contains(b.status);
+        var i = 0;
+        Widget anim(Widget w) => FadeSlideIn(index: i++, child: w);
+        return Scaffold(
+          appBar: AppBar(title: const Text('Booking')),
+          body: AbsorbPointer(
+            absorbing: _busy,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+              children: [
+                anim(
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              b.agencyName,
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            Text(
+                              '${b.serviceLabel} · ${b.eventType}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                      StatusChip(b.status),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                if (!ended)
+                  anim(
+                    StatusTimeline(
+                      current: _stepFor(b.status),
+                      color: HavenColors.sage,
+                      steps: _steps,
+                    ),
+                  ),
+                if (b.status == BookingStatus.declined)
+                  anim(
+                    SoftBanner(
+                      icon: Icons.info_outline,
+                      color: HavenColors.declined,
+                      text: b.agencyNote.isNotEmpty
+                          ? '${b.agencyName} couldn\'t take this one: ${b.agencyNote}'
+                          : '${b.agencyName} couldn\'t take this booking. Other agencies may be free — have a look in Explore.',
+                    ),
+                  ),
+                if (b.status == BookingStatus.cancelled)
+                  anim(
+                    SoftBanner(
+                      icon: Icons.cancel_outlined,
+                      color: HavenColors.declined,
+                      text: b.cancelReason.isNotEmpty
+                          ? 'Cancelled: ${b.cancelReason}'
+                          : 'This booking was cancelled.',
+                    ),
+                  ),
+                if (b.status == BookingStatus.pending) ...[
+                  const SizedBox(height: 14),
+                  anim(
+                    const SoftBanner(
+                      icon: Icons.hourglass_top_rounded,
+                      text:
+                          'Your request is with the agency. Most reply within a few hours.',
+                    ),
+                  ),
+                ],
+                if (!ended && b.agencyNote.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  anim(
+                    SoftBanner(
+                      icon: Icons.chat_bubble_outline,
+                      text: 'Note from ${b.agencyName}: ${b.agencyNote}',
+                    ),
+                  ),
+                ],
+                if (b.rescheduleRequest != null && b.isActive) ...[
+                  const SizedBox(height: 10),
+                  anim(
+                    SoftBanner(
+                      icon: Icons.update_rounded,
+                      text:
+                          '${b.rescheduleRequest!.by == 'agency' ? 'The agency' : 'You'} asked to move this to '
+                          '${DateFormat('EEE d MMM · h:mm a').format(b.rescheduleRequest!.date)}'
+                          '${b.rescheduleRequest!.reason.isEmpty ? '' : ' — ${b.rescheduleRequest!.reason}'}.',
+                    ),
+                  ),
+                ],
+                if (b.assigned.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  const SectionTitle('Your team'),
+                  const SizedBox(height: 8),
+                  anim(_TeamCard(booking: b)),
+                  if (b.awaitingTeamApproval) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SecondaryButton(
+                            label: 'Request changes',
+                            onPressed: () => _requestChanges(b),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: PrimaryButton(
+                            label: 'Approve team',
+                            loading: _busy,
+                            onPressed: () => _approve(b),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (b.clientApproval == ClientApproval.changesRequested) ...[
+                    const SizedBox(height: 10),
+                    SoftBanner(
+                      icon: Icons.sync_rounded,
+                      text:
+                          'You asked for changes${b.clientFeedback.isEmpty ? '' : ': "${b.clientFeedback}"'}. The agency is updating your team.',
+                    ),
+                  ],
+                ],
+                const SizedBox(height: 20),
+                const SectionTitle('Details'),
+                const SizedBox(height: 8),
+                anim(
+                  Surface(
+                    child: Column(
+                      children: [
+                        InfoTile(
+                          icon: Icons.calendar_today_outlined,
+                          label: 'When',
+                          value:
+                              '${DateFormat('EEEE d MMMM · h:mm a').format(b.eventDate)} · ${b.hours} h',
+                        ),
+                        InfoTile(
+                          icon: Icons.location_on_outlined,
+                          label: 'Where',
+                          value: b.location,
+                        ),
+                        InfoTile(
+                          icon: Icons.groups_outlined,
+                          label: 'Team & guests',
+                          value:
+                              '${b.personnelCount} personnel · ${b.guests} guests',
+                        ),
+                        if (b.requirements.isNotEmpty)
+                          InfoTile(
+                            icon: Icons.notes_outlined,
+                            label: 'Requirements',
+                            value: b.requirements,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                anim(
+                  Surface(
+                    child: Column(
+                      children: [
+                        _Line(
+                          '${session.money(b.hourlyRate)} × ${b.hours} h × ${b.personnelCount}',
+                          session.money(b.subtotal),
+                        ),
+                        _Line('Platform fee', session.money(b.platformFee)),
+                        _Line('Tax', session.money(b.tax)),
+                        const HairlineDivider(),
+                        _Line(
+                          'Total',
+                          session.money(b.totalAmount),
+                          bold: true,
+                        ),
+                        const SizedBox(height: 4),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Payment: ${b.paymentStatus}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                StreamBuilder<List<Agreement>>(
+                  stream: _agreements,
+                  builder: (context, s) {
+                    final list = s.data ?? const <Agreement>[];
+                    if (list.isEmpty) return const SizedBox.shrink();
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 20),
+                        const SectionTitle('Agreements'),
+                        const SizedBox(height: 8),
+                        for (final a in list)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _AgreementCard(
+                              agreement: a,
+                              amount: session.money(a.amount),
+                              onAccept: () => _respondAgreement(a, true),
+                              onDecline: () => _respondAgreement(a, false),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+                if (showOps)
+                  StreamBuilder<List<AttendanceRecord>>(
+                    stream: _attendance,
+                    builder: (context, s) {
+                      final list = s.data ?? const <AttendanceRecord>[];
+                      if (list.isEmpty) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const SizedBox(height: 20),
+                          const SectionTitle('Attendance'),
+                          const SizedBox(height: 8),
+                          Surface(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 4,
+                            ),
+                            child: Column(
+                              children: [
+                                for (final r in list)
+                                  _AttendanceRow(
+                                    record: r,
+                                    onConfirm: () => _confirmAttendance(r),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                const SizedBox(height: 24),
+                if (b.canReview) ...[
+                  PrimaryButton(
+                    label: 'Review ${b.agencyName}',
+                    icon: Icons.star_outline_rounded,
+                    onPressed: () =>
+                        showReviewSheet(context, b, session.user!.name),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                if (b.reviewed)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 10),
+                    child: SoftBanner(
+                      icon: Icons.favorite_border_rounded,
+                      text: 'Thanks for sharing your review.',
+                    ),
+                  ),
+                if (b.canCancel) ...[
+                  SecondaryButton(
+                    label: 'Request a new date or time',
+                    icon: Icons.update_rounded,
+                    onPressed: () => _reschedule(b),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                SecondaryButton(
+                  label: 'Report a problem',
+                  icon: Icons.support_agent_rounded,
+                  onPressed: () => showNewTicketSheet(context, booking: b),
+                ),
+                if (b.canCancel) ...[
+                  const SizedBox(height: 4),
+                  TextButton(
+                    onPressed: () => _cancel(b),
+                    style: TextButton.styleFrom(
+                      foregroundColor: HavenColors.declined,
+                    ),
+                    child: const Text('Cancel booking'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _TeamCard extends StatelessWidget {
+  final Booking booking;
+  const _TeamCard({required this.booking});
+
+  @override
+  Widget build(BuildContext context) {
+    return Surface(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: Column(
+        children: [
+          for (final p in booking.assigned)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
                 children: [
                   Avatar(
-                    url: asBouncer ? null : b.bouncerPhotoUrl,
-                    name: otherName,
-                    radius: 30,
+                    url: p.photoUrl.isEmpty ? null : p.photoUrl,
+                    name: p.name,
+                    radius: 22,
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          asBouncer ? 'Requested by' : 'Your professional',
-                          style: const TextStyle(
-                            color: HavenColors.muted,
-                            fontSize: 12,
-                          ),
+                          p.name,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                         Text(
-                          otherName,
-                          style: Theme.of(context).textTheme.titleLarge,
+                          [
+                            if (p.code.isNotEmpty) p.code,
+                            ...p.skills.take(3),
+                          ].join(' · '),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
                   ),
-                  StatusChip(b.status),
                 ],
               ),
-              const SizedBox(height: 16),
-              _statusBanner(b),
-              const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  child: Column(
-                    children: [
-                      InfoTile(
-                        icon: Icons.celebration_outlined,
-                        label: 'Event',
-                        value: b.eventType,
-                      ),
-                      InfoTile(
-                        icon: Icons.calendar_today_outlined,
-                        label: 'When',
-                        value: DateFormat(
-                          'EEEE, d MMMM y · h:mm a',
-                        ).format(b.eventDate),
-                      ),
-                      InfoTile(
-                        icon: Icons.timelapse_rounded,
-                        label: 'Duration',
-                        value: '${b.hours} hours',
-                      ),
-                      InfoTile(
-                        icon: Icons.location_on_outlined,
-                        label: 'Venue',
-                        value: b.location,
-                      ),
-                      InfoTile(
-                        icon: Icons.groups_outlined,
-                        label: 'Expected guests',
-                        value: '${b.guests}',
-                      ),
-                      if (asBouncer &&
-                          b.customerPhone.isNotEmpty &&
-                          b.status == BookingStatus.accepted)
-                        InfoTile(
-                          icon: Icons.phone_outlined,
-                          label: 'Client phone',
-                          value: b.customerPhone,
-                        ),
-                      if (b.notes.isNotEmpty)
-                        InfoTile(
-                          icon: Icons.sticky_note_2_outlined,
-                          label: 'Notes',
-                          value: b.notes,
-                        ),
-                      if (b.bouncerNote.isNotEmpty)
-                        InfoTile(
-                          icon: Icons.chat_bubble_outline,
-                          label:
-                              'Message from ${b.bouncerName.split(' ').first}',
-                          value: b.bouncerNote,
-                        ),
-                    ],
-                  ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AgreementCard extends StatelessWidget {
+  final Agreement agreement;
+  final String amount;
+  final VoidCallback onAccept;
+  final VoidCallback onDecline;
+  const _AgreementCard({
+    required this.agreement,
+    required this.amount,
+    required this.onAccept,
+    required this.onDecline,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final a = agreement;
+    return Surface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  a.title,
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
               ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: HavenColors.sandSoft,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      '${session.money(b.hourlyRate)} × ${b.hours} h',
-                      style: const TextStyle(color: HavenColors.muted),
-                    ),
-                    const Spacer(),
-                    Text(
-                      session.money(b.totalAmount),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 18,
-                        color: HavenColors.sageDark,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              ..._actions(context, b, session),
+              StatusChip(a.status),
             ],
-          );
-        },
+          ),
+          const SizedBox(height: 4),
+          Text(
+            [
+              amount,
+              if (a.startDate.isNotEmpty)
+                '${a.startDate}${a.endDate.isEmpty ? '' : ' → ${a.endDate}'}',
+            ].join(' · '),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          if (a.terms.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(a.terms, style: const TextStyle(height: 1.45)),
+          ],
+          if (a.awaitingClient) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: SecondaryButton(
+                    label: 'Decline',
+                    onPressed: onDecline,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: PrimaryButton(label: 'Accept', onPressed: onAccept),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }
+}
 
-  Widget _statusBanner(Booking b) {
-    final (IconData icon, String text) = switch (b.status) {
-      BookingStatus.pending => (
-        Icons.hourglass_top_rounded,
-        asBouncer
-            ? 'This client is waiting for your reply.'
-            : 'Your request has been sent. We\'ll let you know as soon as there\'s a reply.',
-      ),
-      BookingStatus.accepted => (
-        Icons.check_circle_outline,
-        asBouncer
-            ? 'You\'ve confirmed this booking. Mark it complete after the event.'
-            : 'Confirmed! Your professional will be there for you.',
-      ),
-      BookingStatus.completed => (
-        Icons.favorite_border,
-        asBouncer
-            ? 'Event completed. Thank you for keeping people safe.'
-            : 'We hope everything went smoothly.',
-      ),
-      BookingStatus.declined => (
-        Icons.info_outline,
-        asBouncer
-            ? 'You declined this request.'
-            : 'This professional isn\'t available. Others would be glad to help.',
-      ),
-      _ => (Icons.block_rounded, 'This booking was cancelled.'),
-    };
-    return SoftBanner(
-      icon: icon,
-      text: text,
-      color: StatusChip.colorFor(b.status),
-    );
-  }
+class _AttendanceRow extends StatelessWidget {
+  final AttendanceRecord record;
+  final VoidCallback onConfirm;
+  const _AttendanceRow({required this.record, required this.onConfirm});
 
-  List<Widget> _actions(BuildContext context, Booking b, Session session) {
-    Future<void> run(Future<void> Function() f, String done) async {
-      try {
-        await f();
-        if (context.mounted) showMessage(context, done);
-      } catch (e) {
-        if (context.mounted) showMessage(context, AuthService.friendlyError(e));
-      }
-    }
-
-    final db = DbService.instance;
-
-    if (asBouncer) {
-      if (b.status == BookingStatus.pending) {
-        return [
-          FilledButton.icon(
-            icon: const Icon(Icons.check_rounded),
-            label: const Text('Accept booking'),
-            onPressed: () async {
-              final note = await _askNote(
-                context,
-                'Add a note for the client',
-                'e.g. I\'ll arrive 30 minutes early to walk the venue.',
-              );
-              if (note == null) return;
-              await run(
-                () => db.setBookingStatus(
-                  b.id,
-                  BookingStatus.accepted,
-                  note: note,
+  @override
+  Widget build(BuildContext context) {
+    final r = record;
+    final t = DateFormat('h:mm a');
+    final times = [
+      if (r.checkIn != null) 'in ${t.format(r.checkIn!)}',
+      if (r.checkOut != null) 'out ${t.format(r.checkOut!)}',
+    ].join(' · ');
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  r.personnelName,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
-                'Booking accepted',
-              );
-            },
-          ),
-          const SizedBox(height: 10),
-          OutlinedButton(
-            onPressed: () async {
-              final note = await _askNote(
-                context,
-                'Decline kindly',
-                'Let the client know why (optional).',
-              );
-              if (note == null) return;
-              await run(
-                () => db.setBookingStatus(
-                  b.id,
-                  BookingStatus.declined,
-                  note: note,
+                Text(
+                  '${r.date} · ${r.status}${times.isEmpty ? '' : ' · $times'}',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-                'Booking declined',
-              );
-            },
-            child: const Text('Decline'),
-          ),
-        ];
-      }
-      if (b.status == BookingStatus.accepted) {
-        return [
-          FilledButton.icon(
-            icon: const Icon(Icons.task_alt_rounded),
-            label: const Text('Mark as completed'),
-            onPressed: () async {
-              if (!await confirmDialog(
-                context,
-                title: 'Event finished?',
-                message: 'The client will be invited to leave a review.',
-                confirm: 'Mark complete',
-              )) {
-                return;
-              }
-              await run(
-                () => db.setBookingStatus(b.id, BookingStatus.completed),
-                'Marked as completed',
-              );
-            },
-          ),
-        ];
-      }
-      return [];
-    }
-
-    // Customer actions
-    final widgets = <Widget>[];
-    if (b.status == BookingStatus.completed && !b.reviewed) {
-      widgets.add(
-        FilledButton.icon(
-          icon: const Icon(Icons.star_outline_rounded),
-          label: const Text('Leave a review'),
-          onPressed: () => showReviewSheet(context, b, session.user!.name),
-        ),
-      );
-    }
-    if (b.status == BookingStatus.completed && b.reviewed) {
-      widgets.add(
-        const SoftBanner(
-          icon: Icons.favorite_rounded,
-          text: 'Thanks for sharing your review!',
-          color: HavenColors.sand,
-        ),
-      );
-    }
-    if (b.isUpcoming) {
-      widgets.add(
-        OutlinedButton(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: HavenColors.declined,
-          ),
-          onPressed: () async {
-            if (!await confirmDialog(
-              context,
-              title: 'Cancel this booking?',
-              message: 'Your professional will be notified.',
-              confirm: 'Cancel booking',
-              destructive: true,
-            )) {
-              return;
-            }
-            await run(
-              () => db.setBookingStatus(b.id, BookingStatus.cancelled),
-              'Booking cancelled',
-            );
-          },
-          child: const Text('Cancel booking'),
-        ),
-      );
-    }
-    return widgets;
-  }
-
-  Future<String?> _askNote(BuildContext context, String title, String hint) {
-    final c = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: HavenColors.surface,
-        title: Text(title),
-        content: TextField(
-          controller: c,
-          maxLines: 3,
-          decoration: InputDecoration(hintText: hint),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Back'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, c.text.trim()),
-            child: const Text(
-              'Send',
-              style: TextStyle(fontWeight: FontWeight.w700),
+              ],
             ),
           ),
+          AnimatedSwitcher(
+            duration: Motion.medium,
+            child: r.clientConfirmed
+                ? const Pill(
+                    'Confirmed',
+                    key: ValueKey('c'),
+                    icon: Icons.check_rounded,
+                  )
+                : TextButton(
+                    key: const ValueKey('n'),
+                    onPressed: onConfirm,
+                    child: const Text('Confirm attendance'),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Line extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool bold;
+  const _Line(this.label, this.value, {this.bold = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
+      color: bold ? HavenColors.ink : HavenColors.muted,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: style)),
+          Text(value, style: style),
         ],
       ),
     );

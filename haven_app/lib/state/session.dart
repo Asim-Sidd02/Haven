@@ -20,6 +20,8 @@ class Session extends ChangeNotifier {
   String currency = 'USD';
   String supportEmail = '';
   String supportPhone = '';
+  double commissionPercent = 10;
+  double taxPercent = 18;
 
   Session(this.auth) {
     _authSub = auth.authChanges().listen(_onAuth);
@@ -66,6 +68,10 @@ class Session extends ChangeNotifier {
         : 'USD';
     supportEmail = s['supportEmail'] ?? '';
     supportPhone = s['supportPhone'] ?? '';
+    final c = s['commissionPercent'];
+    final t = s['taxPercent'];
+    commissionPercent = c is num ? c.toDouble() : 10;
+    taxPercent = t is num ? t.toDouble() : 18;
     notifyListeners();
   }
 

@@ -4,13 +4,15 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  Building2,
   CalendarCheck,
+  LifeBuoy,
   LayoutDashboard,
   LogOut,
   Menu,
   MessageSquareHeart,
   Settings,
-  ShieldUser,
+  UserCheck,
   Users,
   X,
 } from "lucide-react";
@@ -20,10 +22,12 @@ import { Avatar, IconButton } from "@/components/ui";
 
 const NAV = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/bouncers", label: "Bouncers", icon: ShieldUser },
+  { href: "/agencies", label: "Agencies", icon: Building2 },
+  { href: "/personnel", label: "Personnel", icon: UserCheck },
   { href: "/users", label: "Users", icon: Users },
   { href: "/bookings", label: "Bookings", icon: CalendarCheck },
   { href: "/reviews", label: "Reviews", icon: MessageSquareHeart },
+  { href: "/support", label: "Support", icon: LifeBuoy },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

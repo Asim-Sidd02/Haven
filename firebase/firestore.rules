@@ -1,153 +1,250 @@
 rules_version = '2';
 
-// Haven — Firestore security rules
-// Roles live in users/{uid}.role : 'customer' | 'bouncer' | 'admin'
+// Haven — Firestore security rules (v2: agency marketplace). See SCHEMA.md.
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
     function uid() { return request.auth.uid; }
-    function userDoc() { return get(/databases/$(database)/documents/users/$(uid())).data; }
-    function isAdmin() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/users/$(uid()))
-        && userDoc().role == 'admin';
-    }
+    function userPath() { return /databases/$(database)/documents/users/$(uid()); }
+    function me() { return get(userPath()).data; }
+    function hasProfile() { return signedIn() && exists(userPath()); }
+    function isAdmin() { return hasProfile() && me().role == 'admin'; }
+    function isAgency() { return hasProfile() && me().role == 'agency' && me().isActive == true; }
+    function myAgency() { return me().agencyId; }
+    function isOwner() { return isAgency() && me().staffRole in ['owner', 'manager']; }
+    // Agency member acting on its own agency's data.
+    function memberOf(agencyId) { return isAgency() && myAgency() == agencyId; }
     function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
-    function reviewPath(reviewId) {
-      return /databases/$(database)/documents/reviews/$(reviewId);
-    }
-    function bookingPath(bookingId) {
-      return /databases/$(database)/documents/bookings/$(bookingId);
-    }
-    function bouncerPath(bouncerId) {
-      return /databases/$(database)/documents/bouncers/$(bouncerId);
-    }
-    function validReviewRatingUpdate(bouncerId, reviewId) {
-      let review = getAfter(reviewPath(reviewId)).data;
-      let booking = get(bookingPath(reviewId)).data;
-      let bookingAfter = getAfter(bookingPath(reviewId)).data;
-      return existsAfter(reviewPath(reviewId))
-        && !exists(reviewPath(reviewId))
-        && exists(bookingPath(reviewId))
-        && review.bookingId == reviewId
-        && review.customerId == uid()
-        && review.bouncerId == bouncerId
-        && review.rating is int
-        && review.rating >= 1 && review.rating <= 5
-        && booking.customerId == uid()
-        && booking.bouncerId == bouncerId
-        && booking.status == 'completed'
-        && booking.reviewed == false
-        && bookingAfter.reviewed == true;
-    }
-    function bouncerRatingIncludesReview(bouncerId, reviewId, rating) {
-      let before = get(bouncerPath(bouncerId)).data;
-      let after = getAfter(bouncerPath(bouncerId)).data;
-      return exists(bouncerPath(bouncerId))
-        && after.lastReviewId == reviewId
-        && after.reviewCount == before.reviewCount + 1
-        && after.ratingTotal == before.ratingTotal + rating
-        && after.rating == after.ratingTotal / after.reviewCount;
-    }
+    function newAgency() { return request.resource.data.agencyId; }
+    function oldAgency() { return resource.data.agencyId; }
+    function inviteFor(email) { return /databases/$(database)/documents/invites/$(email); }
 
     // ---------- users ----------
     match /users/{userId} {
-      allow read: if signedIn() && (uid() == userId || isAdmin());
-      // Self sign-up: may only pick customer or bouncer, never admin.
+      allow read: if signedIn() && (uid() == userId || isAdmin()
+        || (isAgency() && resource.data.agencyId == myAgency()));
       allow create: if signedIn() && uid() == userId
-        && request.resource.data.role in ['customer', 'bouncer']
-        && request.resource.data.isActive == true;
-      // Self edit: cannot change own role or active flag.
+        && request.resource.data.isActive == true
+        && (
+          // Client app sign-up.
+          (request.resource.data.role == 'customer')
+          // New agency owner: the agency id is their own uid.
+          || (request.resource.data.role == 'agency'
+              && request.resource.data.agencyId == uid()
+              && request.resource.data.staffRole == 'owner')
+          // Invited staff member.
+          || (request.resource.data.role == 'agency'
+              && exists(inviteFor(request.auth.token.email.lower()))
+              && get(inviteFor(request.auth.token.email.lower())).data.agencyId == request.resource.data.agencyId
+              && get(inviteFor(request.auth.token.email.lower())).data.staffRole == request.resource.data.staffRole)
+        );
       allow update: if isAdmin()
         || (signedIn() && uid() == userId
-            && !changed().hasAny(['role', 'isActive', 'createdAt']));
+            && !changed().hasAny(['role', 'isActive', 'createdAt', 'agencyId', 'staffRole']))
+        // Owner/manager manages their staff (never another owner, never themselves).
+        || (isOwner() && resource.data.agencyId == myAgency() && userId != uid()
+            && resource.data.staffRole != 'owner'
+            && changed().hasOnly(['isActive', 'staffRole'])
+            && request.resource.data.staffRole in ['manager', 'hr', 'bookings', 'finance']);
       allow delete: if isAdmin();
     }
 
-    // ---------- bouncers (public profiles) ----------
-    match /bouncers/{bouncerId} {
-      allow read: if signedIn()
-        && (resource.data.status == 'approved' || uid() == bouncerId || isAdmin());
+    // ---------- staff invitations ----------
+    match /invites/{email} {
+      allow read: if isAdmin()
+        || (signedIn() && request.auth.token.email.lower() == email)
+        || (isAgency() && resource.data.agencyId == myAgency());
+      allow create, update: if isAdmin()
+        || (isOwner() && request.resource.data.agencyId == myAgency()
+            && request.resource.data.staffRole in ['manager', 'hr', 'bookings', 'finance']);
+      allow delete: if isAdmin() || (isOwner() && resource.data.agencyId == myAgency());
+    }
 
-      allow create: if signedIn() && uid() == bouncerId
-        && request.resource.data.status == 'pending'
+    // ---------- agencies ----------
+    match /agencies/{agencyId} {
+      allow read: if signedIn()
+        && (resource.data.status == 'approved' || memberOf(agencyId) || isAdmin());
+      allow create: if signedIn() && uid() == agencyId
+        && request.resource.data.status in ['draft', 'pending']
         && request.resource.data.verified == false
         && request.resource.data.rating == 0
         && request.resource.data.reviewCount == 0
-        && request.resource.data.ratingTotal == 0
-        && request.resource.data.lastReviewId == null;
+        && request.resource.data.ratingTotal == 0;
       allow update: if isAdmin()
-        // Bouncer edits own profile but not moderation / rating fields.
-        || (signedIn() && uid() == bouncerId
-            && !changed().hasAny(['status', 'verified', 'rating', 'reviewCount', 'ratingTotal', 'lastReviewId', 'createdAt']))
-        // A rating increment must be atomic with its completed-booking review.
-        || (signedIn() && uid() != bouncerId
-            && request.resource.data.lastReviewId is string
+        // Agency edits its own profile but not moderation / rating fields;
+        // it may move itself from draft/rejected to pending (submit for review).
+        || (memberOf(agencyId)
+            && !changed().hasAny(['verified', 'rating', 'reviewCount', 'ratingTotal', 'lastReviewId', 'adminRemarks', 'createdAt'])
+            && (request.resource.data.status == resource.data.status
+                || (resource.data.status in ['draft', 'rejected'] && request.resource.data.status == 'pending')))
+        // Atomic rating increment written together with a review of a completed booking.
+        || (signedIn() && !memberOf(agencyId)
             && changed().hasOnly(['rating', 'reviewCount', 'ratingTotal', 'lastReviewId'])
             && request.resource.data.reviewCount == resource.data.reviewCount + 1
-            && validReviewRatingUpdate(bouncerId, request.resource.data.lastReviewId)
+            && existsAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId))
+            && !exists(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId))
+            && getAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)).data.agencyId == agencyId
+            && getAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)).data.customerId == uid()
             && request.resource.data.ratingTotal == resource.data.ratingTotal
-                + getAfter(reviewPath(request.resource.data.lastReviewId)).data.rating
-            && request.resource.data.rating
-                == request.resource.data.ratingTotal / request.resource.data.reviewCount);
-
+               + getAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)).data.rating
+            // Average is computed client-side; bound it rather than compare floats exactly.
+            && request.resource.data.rating is number
+            && request.resource.data.rating >= 1 && request.resource.data.rating <= 5);
       allow delete: if isAdmin();
+
+      match /private/{docId} {
+        allow read, write: if isAdmin() || (memberOf(agencyId) && me().staffRole in ['owner', 'manager', 'finance']);
+      }
+    }
+
+    // ---------- personnel (central registry) ----------
+    match /personnel/{id} {
+      allow read: if isAdmin() || memberOf(oldAgency());
+      allow create: if memberOf(newAgency())
+        && request.resource.data.verificationStatus in ['draft', 'pending'];
+      // Agency cannot self-verify, suspend or clear admin remarks.
+      allow update: if isAdmin()
+        || (memberOf(oldAgency()) && newAgency() == oldAgency()
+            && !changed().hasAny(['adminRemarks', 'createdAt'])
+            && (request.resource.data.verificationStatus == resource.data.verificationStatus
+                || request.resource.data.verificationStatus == 'pending'));
+      allow delete: if isAdmin()
+        || (memberOf(oldAgency()) && resource.data.verificationStatus == 'draft');
+    }
+
+    // ---------- documents ----------
+    match /documents/{id} {
+      allow read: if isAdmin() || memberOf(oldAgency());
+      allow create: if memberOf(newAgency()) && request.resource.data.status == 'pending';
+      allow update: if isAdmin()
+        || (memberOf(oldAgency()) && newAgency() == oldAgency()
+            && !changed().hasAny(['remarks'])
+            && request.resource.data.status in [resource.data.status, 'pending']);
+      allow delete: if isAdmin() || (memberOf(oldAgency()) && resource.data.status != 'verified');
     }
 
     // ---------- bookings ----------
     match /bookings/{bookingId} {
-      function party() {
-        return signedIn() && (resource.data.customerId == uid() || resource.data.bouncerId == uid());
-      }
-
-      allow read: if party() || isAdmin();
+      allow read: if isAdmin() || memberOf(oldAgency())
+        || (signedIn() && resource.data.customerId == uid());
 
       allow create: if signedIn()
         && request.resource.data.customerId == uid()
         && request.resource.data.status == 'pending'
-        && request.resource.data.reviewed == false;
+        && request.resource.data.reviewed == false
+        && request.resource.data.paymentStatus == 'unpaid'
+        && request.resource.data.assignedIds.size() == 0;
 
       allow update: if isAdmin()
-        // Customer: cancel a pending/accepted booking, or mark it reviewed.
+        // Customer: cancel, review the assigned team, ask to reschedule, mark reviewed.
         || (signedIn() && resource.data.customerId == uid()
-            && changed().hasOnly(['status', 'updatedAt', 'reviewed'])
-            && ((request.resource.data.status == 'cancelled'
-                 && resource.data.status in ['pending', 'accepted'])
-                || (request.resource.data.status == resource.data.status
-                    && request.resource.data.reviewed == true
-                    && resource.data.status == 'completed')))
-        // Bouncer: accept/decline pending, complete accepted.
-        || (signedIn() && resource.data.bouncerId == uid()
-            && changed().hasOnly(['status', 'updatedAt', 'bouncerNote'])
-            && ((resource.data.status == 'pending'
-                 && request.resource.data.status in ['accepted', 'declined'])
-                || (resource.data.status == 'accepted'
-                    && request.resource.data.status in ['completed', 'accepted'])));
+            && changed().hasOnly(['status', 'clientApproval', 'clientFeedback', 'rescheduleRequest', 'cancelReason', 'reviewed', 'updatedAt'])
+            && (request.resource.data.status == resource.data.status
+                || (request.resource.data.status == 'cancelled'
+                    && resource.data.status in ['pending', 'accepted', 'assigned'])
+                || (request.resource.data.status == 'ongoing' && resource.data.status == 'assigned'
+                    && request.resource.data.clientApproval == 'approved'))
+            && (request.resource.data.reviewed == resource.data.reviewed || resource.data.status == 'completed'))
+        // Agency: everything operational, never the customer, price or payment fields.
+        || (memberOf(oldAgency())
+            && !changed().hasAny(['customerId', 'customerName', 'customerPhone', 'agencyId', 'hourlyRate',
+                                  'subtotal', 'platformFee', 'tax', 'totalAmount', 'paymentStatus', 'reviewed', 'createdAt']));
 
       allow delete: if isAdmin();
     }
 
-    // ---------- reviews (doc id == bookingId, so one review per booking) ----------
+    // ---------- attendance ----------
+    match /attendance/{id} {
+      allow read: if isAdmin() || memberOf(oldAgency())
+        || (signedIn() && resource.data.customerId == uid());
+      allow create: if memberOf(newAgency());
+      allow update: if isAdmin()
+        || (memberOf(oldAgency()) && newAgency() == oldAgency())
+        || (signedIn() && resource.data.customerId == uid() && changed().hasOnly(['clientConfirmed']));
+      allow delete: if isAdmin() || memberOf(oldAgency());
+    }
+
+    // ---------- agreements ----------
+    match /agreements/{id} {
+      allow read: if isAdmin() || memberOf(oldAgency())
+        || (signedIn() && resource.data.customerId == uid() && resource.data.status != 'draft');
+      allow create: if memberOf(newAgency()) && request.resource.data.clientAccepted == false;
+      allow update: if isAdmin()
+        || (memberOf(oldAgency()) && newAgency() == oldAgency()
+            && !changed().hasAny(['clientAccepted', 'customerId']))
+        || (signedIn() && resource.data.customerId == uid() && resource.data.status == 'sent'
+            && changed().hasOnly(['clientAccepted', 'status', 'history', 'updatedAt'])
+            && request.resource.data.status in ['accepted', 'declined', 'sent']);
+      allow delete: if isAdmin() || (memberOf(oldAgency()) && resource.data.status == 'draft');
+    }
+
+    // ---------- money ----------
+    match /transactions/{id} {
+      allow read: if isAdmin() || (memberOf(oldAgency()) && me().staffRole in ['owner', 'manager', 'finance']);
+      allow write: if isAdmin();
+    }
+    match /payroll/{id} {
+      allow read, delete: if isAdmin() || (memberOf(oldAgency()) && me().staffRole in ['owner', 'manager', 'finance', 'hr']);
+      allow create: if memberOf(newAgency()) && me().staffRole in ['owner', 'manager', 'finance', 'hr'];
+      allow update: if isAdmin() || (memberOf(oldAgency()) && newAgency() == oldAgency()
+                                     && me().staffRole in ['owner', 'manager', 'finance', 'hr']);
+    }
+
+    // ---------- notifications ----------
+    match /notifications/{id} {
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.recipientId == uid())
+        || (isAgency() && resource.data.recipientId == myAgency());
+      // Anyone signed in may notify; the recipient alone may mark as read.
+      allow create: if signedIn() && request.resource.data.read == false;
+      allow update: if isAdmin()
+        || (((signedIn() && resource.data.recipientId == uid()) || (isAgency() && resource.data.recipientId == myAgency()))
+            && changed().hasOnly(['read']));
+      allow delete: if isAdmin() || (isAgency() && resource.data.recipientId == myAgency());
+    }
+
+    // ---------- reviews (doc id == bookingId) ----------
     match /reviews/{bookingId} {
+      function booking() { return get(/databases/$(database)/documents/bookings/$(bookingId)).data; }
       allow read: if signedIn();
       allow create: if signedIn()
         && request.resource.data.bookingId == bookingId
         && request.resource.data.customerId == uid()
-        && request.resource.data.bouncerId != uid()
         && request.resource.data.rating is int
         && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
-        && get(bookingPath(bookingId)).data.customerId == uid()
-        && get(bookingPath(bookingId)).data.status == 'completed'
-        && get(bookingPath(bookingId)).data.reviewed == false
-        && get(bookingPath(bookingId)).data.bouncerId == request.resource.data.bouncerId
-        && getAfter(bookingPath(bookingId)).data.reviewed == true
-        && bouncerRatingIncludesReview(
-          request.resource.data.bouncerId, bookingId, request.resource.data.rating);
+        && booking().customerId == uid()
+        && booking().agencyId == request.resource.data.agencyId
+        && booking().status == 'completed'
+        && booking().reviewed == false
+        && getAfter(/databases/$(database)/documents/bookings/$(bookingId)).data.reviewed == true;
+      // The agency may reply or report, nothing else.
+      allow update: if isAdmin()
+        || (memberOf(resource.data.agencyId) && changed().hasOnly(['reply', 'replyAt', 'reported']));
+      allow delete: if isAdmin();
+    }
+
+    // ---------- tickets (complaints & support) ----------
+    match /tickets/{id} {
+      allow read: if isAdmin() || memberOf(oldAgency())
+        || (signedIn() && resource.data.customerId == uid());
+      allow create: if memberOf(newAgency())
+        || (signedIn() && request.resource.data.customerId == uid());
+      allow update: if isAdmin()
+        || (memberOf(oldAgency()) && newAgency() == oldAgency())
+        || (signedIn() && resource.data.customerId == uid()
+            && changed().hasOnly(['messages', 'updatedAt']));
+      allow delete: if isAdmin();
+    }
+
+    // ---------- activity log ----------
+    match /activity/{id} {
+      allow read: if isAdmin() || memberOf(oldAgency());
+      allow create: if memberOf(newAgency()) && request.resource.data.actorId == uid();
       allow update, delete: if isAdmin();
     }
 
-    // ---------- app settings (admin-managed, readable by all signed-in) ----------
+    // ---------- app settings ----------
     match /settings/{docId} {
       allow read: if signedIn();
       allow write: if isAdmin();

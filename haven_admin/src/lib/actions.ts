@@ -1,36 +1,79 @@
 "use client";
 
 import {
+  addDoc,
+  arrayUnion,
+  collection,
   deleteDoc,
   doc,
   getDoc,
   serverTimestamp,
   setDoc,
+  Timestamp,
   updateDoc,
   writeBatch,
-  type DocumentData,
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
-import type { AppSettings, Bouncer, BouncerStatus, Review } from "./types";
+import type { Agency, AgencyStatus, AppSettings, DocStatus, NotificationType, Review, TicketStatus, VerificationStatus } from "./types";
 
-// ---------- bouncers ----------
-export async function updateBouncer(id: string, data: Partial<Bouncer>) {
-  const { id: _omit, ...rest } = data as Partial<Bouncer> & { id?: string };
-  void _omit;
-  await updateDoc(doc(db(), "bouncers", id), { ...rest, updatedAt: serverTimestamp() } as DocumentData);
-  // Keep the name in the user profile in sync.
-  if (rest.name !== undefined) {
-    const u = await getDoc(doc(db(), "users", id));
-    if (u.exists()) await updateDoc(doc(db(), "users", id), { name: rest.name });
+// ---------- notifications ----------
+export function notify(recipientId: string, type: NotificationType, title: string, body: string, link = "") {
+  return addDoc(collection(db(), "notifications"), {
+    recipientId,
+    type,
+    title,
+    body,
+    link,
+    read: false,
+    createdAt: serverTimestamp(),
+  });
+}
+
+// ---------- agencies ----------
+export function updateAgency(id: string, data: Record<string, unknown>) {
+  return updateDoc(doc(db(), "agencies", id), { ...data, updatedAt: serverTimestamp() });
+}
+
+const AGENCY_MSG: Partial<Record<AgencyStatus, string>> = {
+  approved: "Your agency has been approved and is now visible to customers.",
+  rejected: "Your agency application was not approved.",
+  suspended: "Your agency has been suspended. Please contact support.",
+};
+
+/** Moderate an agency; approve / reject / suspend also notify the agency. */
+export async function setAgencyStatus(id: string, status: AgencyStatus, remarks?: string) {
+  await updateAgency(id, { status, ...(remarks !== undefined ? { adminRemarks: remarks } : {}) });
+  const msg = AGENCY_MSG[status];
+  if (msg) {
+    await notify(id, "verification", `Agency ${status}`, remarks ? `${msg} Remarks: ${remarks}` : msg);
   }
 }
 
-export function setBouncerStatus(id: string, status: BouncerStatus) {
-  return updateDoc(doc(db(), "bouncers", id), { status, updatedAt: serverTimestamp() });
+export function deleteAgency(id: string) {
+  return deleteDoc(doc(db(), "agencies", id));
 }
 
-export function deleteBouncerProfile(id: string) {
-  return deleteDoc(doc(db(), "bouncers", id));
+// ---------- personnel ----------
+export function updatePersonnel(id: string, data: Record<string, unknown>) {
+  return updateDoc(doc(db(), "personnel", id), { ...data, updatedAt: serverTimestamp() });
+}
+
+/** Moderate a person; verify / reject / suspend also notify their agency. */
+export async function setPersonnelStatus(p: { id: string; agencyId: string; name: string }, status: VerificationStatus, remarks?: string) {
+  await updatePersonnel(p.id, { verificationStatus: status, ...(remarks !== undefined ? { adminRemarks: remarks } : {}) });
+  if (status === "verified" || status === "rejected" || status === "suspended") {
+    const body = `${p.name} is now ${status}.${remarks ? ` Remarks: ${remarks}` : ""}`;
+    await notify(p.agencyId, "verification", `Personnel ${status}`, body);
+  }
+}
+
+export function deletePersonnel(id: string) {
+  return deleteDoc(doc(db(), "personnel", id));
+}
+
+// ---------- documents ----------
+export function setDocumentStatus(id: string, status: DocStatus, remarks: string) {
+  return updateDoc(doc(db(), "documents", id), { status, remarks });
 }
 
 // ---------- users ----------
@@ -44,8 +87,8 @@ export interface DeleteUserResult {
 }
 
 /**
- * Deletes users/{uid}, bouncers/{uid} (if any) and — when the server has
- * Firebase Admin credentials — the Firebase Auth account.
+ * Deletes users/{uid} and — when the server has Firebase Admin credentials —
+ * the Firebase Auth account. Agency records are left in place.
  */
 export async function deleteUserEverywhere(uid: string): Promise<DeleteUserResult> {
   let authDeleted = false;
@@ -64,10 +107,7 @@ export async function deleteUserEverywhere(uid: string): Promise<DeleteUserResul
     authMessage = (e as Error).message;
   }
 
-  const batch = writeBatch(db());
-  batch.delete(doc(db(), "users", uid));
-  batch.delete(doc(db(), "bouncers", uid));
-  await batch.commit();
+  await deleteDoc(doc(db(), "users", uid));
   return { authDeleted, authMessage };
 }
 
@@ -81,11 +121,11 @@ export function deleteBooking(id: string) {
 }
 
 // ---------- reviews ----------
-async function bouncerRating(bouncerId: string) {
-  const snap = await getDoc(doc(db(), "bouncers", bouncerId));
+async function agencyRating(agencyId: string) {
+  const snap = await getDoc(doc(db(), "agencies", agencyId));
   if (!snap.exists()) return null;
-  const b = snap.data() as Bouncer;
-  return { ratingTotal: Number(b.ratingTotal ?? 0), reviewCount: Number(b.reviewCount ?? 0) };
+  const a = snap.data() as Agency;
+  return { ratingTotal: Number(a.ratingTotal ?? 0), reviewCount: Number(a.reviewCount ?? 0) };
 }
 
 export async function updateReview(review: Review, data: { rating: number; comment: string }) {
@@ -93,10 +133,10 @@ export async function updateReview(review: Review, data: { rating: number; comme
   batch.update(doc(db(), "reviews", review.id), data);
   const diff = data.rating - review.rating;
   if (diff !== 0) {
-    const r = await bouncerRating(review.bouncerId);
+    const r = await agencyRating(review.agencyId);
     if (r) {
       const ratingTotal = Math.max(0, r.ratingTotal + diff);
-      batch.update(doc(db(), "bouncers", review.bouncerId), {
+      batch.update(doc(db(), "agencies", review.agencyId), {
         ratingTotal,
         rating: r.reviewCount > 0 ? ratingTotal / r.reviewCount : 0,
       });
@@ -108,11 +148,11 @@ export async function updateReview(review: Review, data: { rating: number; comme
 export async function deleteReview(review: Review) {
   const batch = writeBatch(db());
   batch.delete(doc(db(), "reviews", review.id));
-  const r = await bouncerRating(review.bouncerId);
+  const r = await agencyRating(review.agencyId);
   if (r) {
     const reviewCount = Math.max(0, r.reviewCount - 1);
     const ratingTotal = Math.max(0, r.ratingTotal - review.rating);
-    batch.update(doc(db(), "bouncers", review.bouncerId), {
+    batch.update(doc(db(), "agencies", review.agencyId), {
       reviewCount,
       ratingTotal,
       rating: reviewCount > 0 ? ratingTotal / reviewCount : 0,
@@ -122,6 +162,18 @@ export async function deleteReview(review: Review) {
   const booking = await getDoc(doc(db(), "bookings", review.bookingId));
   if (booking.exists()) batch.update(booking.ref, { reviewed: false });
   await batch.commit();
+}
+
+// ---------- tickets ----------
+export function replyTicket(id: string, name: string, text: string) {
+  return updateDoc(doc(db(), "tickets", id), {
+    messages: arrayUnion({ by: "admin", name, text, at: Timestamp.now() }),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export function setTicketStatus(id: string, status: TicketStatus) {
+  return updateDoc(doc(db(), "tickets", id), { status, updatedAt: serverTimestamp() });
 }
 
 // ---------- settings ----------

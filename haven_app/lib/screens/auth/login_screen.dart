@@ -47,8 +47,9 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     try {
       await context.read<AuthService>().resetPassword(_email.text);
-      if (mounted)
+      if (mounted) {
         showMessage(context, 'We\'ve sent a reset link to your inbox.');
+      }
     } catch (e) {
       if (mounted) showMessage(context, AuthService.friendlyError(e));
     }

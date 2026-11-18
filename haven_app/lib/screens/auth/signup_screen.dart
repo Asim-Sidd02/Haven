@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../models/app_user.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -20,7 +19,6 @@ class _SignupScreenState extends State<SignupScreen> {
   final _email = TextEditingController();
   final _phone = TextEditingController();
   final _password = TextEditingController();
-  UserRole _role = UserRole.customer;
   bool _busy = false;
   bool _obscure = true;
 
@@ -41,7 +39,6 @@ class _SignupScreenState extends State<SignupScreen> {
         email: _email.text,
         phone: _phone.text,
         password: _password.text,
-        role: _role,
       );
       if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
     } catch (e) {
@@ -64,30 +61,6 @@ class _SignupScreenState extends State<SignupScreen> {
               const PageTitle(
                 title: 'Join Haven',
                 subtitle: 'First, tell us how you\'ll be using Haven.',
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: _RoleCard(
-                      icon: Icons.celebration_outlined,
-                      title: 'I need security',
-                      subtitle: 'Book trusted professionals',
-                      selected: _role == UserRole.customer,
-                      onTap: () => setState(() => _role = UserRole.customer),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _RoleCard(
-                      icon: Icons.shield_outlined,
-                      title: 'I provide security',
-                      subtitle: 'Offer your services',
-                      selected: _role == UserRole.bouncer,
-                      onTap: () => setState(() => _role = UserRole.bouncer),
-                    ),
-                  ),
-                ],
               ),
               const SizedBox(height: 24),
               TextFormField(
@@ -149,20 +122,6 @@ class _SignupScreenState extends State<SignupScreen> {
                     ? 'At least 6 characters, please'
                     : null,
               ),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 200),
-                alignment: Alignment.topCenter,
-                child: _role == UserRole.bouncer
-                    ? const Padding(
-                        padding: EdgeInsets.only(top: 16),
-                        child: SoftBanner(
-                          icon: Icons.info_outline,
-                          text:
-                              'After signing up, complete your profile. Our team reviews every professional before they appear to customers.',
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
               const SizedBox(height: 24),
               PrimaryButton(
                 label: 'Create account',
@@ -213,76 +172,6 @@ class _SignupScreenState extends State<SignupScreen> {
                 ],
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RoleCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final bool selected;
-  final VoidCallback onTap;
-  const _RoleCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      decoration: BoxDecoration(
-        color: selected ? HavenColors.sageSoft : HavenColors.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: selected ? HavenColors.sage : HavenColors.border,
-          width: selected ? 1.6 : 1,
-        ),
-        boxShadow: selected ? HavenColors.softShadow : null,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(18),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    IconBadge(
-                      icon,
-                      size: 36,
-                      color: selected ? HavenColors.sageDark : HavenColors.sage,
-                    ),
-                    const Spacer(),
-                    AnimatedOpacity(
-                      duration: const Duration(milliseconds: 180),
-                      opacity: selected ? 1 : 0,
-                      child: const Icon(
-                        Icons.check_circle_rounded,
-                        color: HavenColors.sageDark,
-                        size: 20,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(title, style: Theme.of(context).textTheme.titleSmall),
-                const SizedBox(height: 2),
-                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
           ),
         ),
       ),

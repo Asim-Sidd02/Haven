@@ -11,18 +11,13 @@ import 'booking_detail_screen.dart';
 
 class BookingTile extends StatelessWidget {
   final Booking booking;
-  final bool asBouncer;
-  const BookingTile({
-    super.key,
-    required this.booking,
-    required this.asBouncer,
-  });
+  const BookingTile({super.key, required this.booking});
 
   @override
   Widget build(BuildContext context) {
     final session = context.read<Session>();
     final b = booking;
-    final otherName = asBouncer ? b.customerName : b.bouncerName;
+    final needsYou = b.awaitingTeamApproval || b.canReview;
     return Pressable(
       child: Card(
         clipBehavior: Clip.antiAlias,
@@ -30,8 +25,7 @@ class BookingTile extends StatelessWidget {
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) =>
-                  BookingDetailScreen(bookingId: b.id, asBouncer: asBouncer),
+              builder: (_) => BookingDetailScreen(bookingId: b.id),
             ),
           ),
           child: Padding(
@@ -41,22 +35,20 @@ class BookingTile extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Avatar(
-                      url: asBouncer ? null : b.bouncerPhotoUrl,
-                      name: otherName,
-                      radius: 22,
-                    ),
+                    Avatar(name: b.agencyName, radius: 22, square: true),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            otherName,
+                            b.agencyName,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                           Text(
-                            b.eventType,
+                            '${b.serviceLabel} · ${b.eventType}',
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: HavenColors.muted,
                               fontSize: 13,
@@ -111,7 +103,7 @@ class BookingTile extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '${b.hours} h',
+                      '${b.personnelCount} × ${b.hours} h',
                       style: const TextStyle(
                         color: HavenColors.muted,
                         fontSize: 13,
@@ -119,6 +111,16 @@ class BookingTile extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (needsYou) ...[
+                  const SizedBox(height: 10),
+                  Pill(
+                    b.canReview
+                        ? 'Share your review'
+                        : 'Your team is ready for approval',
+                    icon: Icons.touch_app_outlined,
+                    filled: true,
+                  ),
+                ],
               ],
             ),
           ),

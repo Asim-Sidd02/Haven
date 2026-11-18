@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowRight, CalendarCheck, Clock, ShieldUser, Sparkles, Star, Users, Wallet } from "lucide-react";
+import { ArrowRight, Building2, CalendarCheck, Clock, Sparkles, Star, UserCheck, Wallet } from "lucide-react";
 import { useCollection } from "@/hooks/useCollection";
 import { useSettings } from "@/hooks/useSettings";
-import { setBouncerStatus } from "@/lib/actions";
+import { setAgencyStatus } from "@/lib/actions";
 import { errMsg, fmtDate, fmtMoney } from "@/lib/format";
-import { BOOKING_STATUSES, type AppUser, type Booking, type BookingStatus, type Bouncer, type Review } from "@/lib/types";
+import { BOOKING_STATUSES, type Agency, type AppUser, type Booking, type BookingStatus, type Personnel, type Review } from "@/lib/types";
 import { Avatar, Badge, Button, Card, CardHeader, Empty, ErrorNote, PageHeader, Skeleton } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { useAuth } from "@/components/AuthProvider";
@@ -15,13 +15,17 @@ import { useAuth } from "@/components/AuthProvider";
 const BAR: Record<BookingStatus, string> = {
   pending: "bg-amber",
   accepted: "bg-sage",
+  assigned: "bg-slate/60",
+  ongoing: "bg-sand",
   completed: "bg-slate",
   declined: "bg-rose",
   cancelled: "bg-rose/50",
 };
 const STATUS_LABEL: Record<BookingStatus, string> = {
-  pending: "Awaiting reply",
-  accepted: "Confirmed",
+  pending: "Awaiting agency",
+  accepted: "Accepted",
+  assigned: "Team assigned",
+  ongoing: "Ongoing",
   completed: "Completed",
   declined: "Declined",
   cancelled: "Cancelled",
@@ -78,7 +82,8 @@ export default function DashboardPage() {
   const { state } = useAuth();
   const toast = useToast();
   const users = useCollection<AppUser>("users");
-  const bouncers = useCollection<Bouncer>("bouncers");
+  const agencies = useCollection<Agency>("agencies");
+  const personnel = useCollection<Personnel>("personnel");
   const bookings = useCollection<Booking>("bookings");
   const reviews = useCollection<Review>("reviews");
   const { settings } = useSettings();
@@ -91,22 +96,23 @@ export default function DashboardPage() {
     let newThisWeek = 0;
     for (const b of bookings.data) {
       if (b.status in byStatus) byStatus[b.status]++;
-      if (b.status === "completed") revenue += Number(b.totalAmount ?? 0);
+      if (b.paymentStatus === "paid" || (b.status === "completed" && b.paymentStatus !== "refunded")) revenue += Number(b.totalAmount ?? 0);
       if ((b.createdAt?.toMillis() ?? 0) > weekAgo) newThisWeek++;
     }
     const ratings = reviews.data.map((r) => Number(r.rating ?? 0)).filter((n) => n > 0);
     const avg = ratings.length ? ratings.reduce((a, b) => a + b, 0) / ratings.length : 0;
     return {
       customers: users.data.filter((u) => u.role === "customer").length,
-      bouncers: users.data.filter((u) => u.role === "bouncer").length,
-      approved: bouncers.data.filter((b) => b.status === "approved").length,
-      pending: bouncers.data.filter((b) => b.status === "pending"),
+      approved: agencies.data.filter((a) => a.status === "approved").length,
+      pending: agencies.data.filter((a) => a.status === "pending"),
+      personnelPending: personnel.data.filter((p) => p.verificationStatus === "pending").length,
+      removals: personnel.data.filter((p) => p.removalRequested).length,
       byStatus,
       revenue,
       newThisWeek,
       avg,
     };
-  }, [users.data, bouncers.data, bookings.data, reviews.data]);
+  }, [users.data, agencies.data, personnel.data, bookings.data, reviews.data]);
 
   const recent = useMemo(
     () => [...bookings.data].sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0)).slice(0, 6),
@@ -116,8 +122,8 @@ export default function DashboardPage() {
   async function moderate(id: string, status: "approved" | "rejected") {
     setBusy(id + status);
     try {
-      await setBouncerStatus(id, status);
-      toast(status === "approved" ? "Bouncer approved and now visible to customers." : "Application declined.");
+      await setAgencyStatus(id, status, status === "rejected" ? "Your application was declined. Please review your profile and documents, then resubmit." : undefined);
+      toast(status === "approved" ? "Agency approved and now visible to customers." : "Application declined.");
     } catch (e) {
       toast(errMsg(e), "error");
     } finally {
@@ -125,7 +131,7 @@ export default function DashboardPage() {
     }
   }
 
-  const loading = users.loading || bouncers.loading || bookings.loading;
+  const loading = users.loading || agencies.loading || personnel.loading || bookings.loading;
   const total = bookings.data.length;
   const firstName = state.status === "admin" ? state.profile.name?.split(" ")[0] : "";
 
@@ -135,7 +141,7 @@ export default function DashboardPage() {
         title={`${greeting()}${firstName ? `, ${firstName}` : ""}`}
         subtitle={new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }) + " · Here's how Haven is doing."}
       />
-      <ErrorNote error={users.error || bouncers.error || bookings.error} />
+      <ErrorNote error={users.error || agencies.error || personnel.error || bookings.error} />
 
       {/* KPI tiles */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -148,17 +154,24 @@ export default function DashboardPage() {
           </>
         ) : (
           <>
-            <Stat label="Total users" value={users.data.length} icon={Users} tone="slate" hint={`${stats.customers} customers · ${stats.bouncers} bouncers`} href="/users" />
-            <Stat label="Live bouncers" value={stats.approved} icon={ShieldUser} tone="sage" hint={`${bouncers.data.length} profiles in total`} href="/bouncers" />
             <Stat
-              label="Awaiting review"
+              label="Agencies pending review"
               value={stats.pending.length}
-              icon={Clock}
+              icon={Building2}
               tone="amber"
-              hint={stats.pending.length ? "Applications need a decision" : "Nothing waiting on you"}
-              href="/bouncers"
+              hint={`${stats.approved} live · ${agencies.data.length} in total`}
+              href="/agencies"
             />
-            <Stat label="Revenue" value={fmtMoney(stats.revenue, settings.currency)} icon={Wallet} tone="sand" hint={`${stats.byStatus.completed} completed bookings`} href="/bookings" />
+            <Stat
+              label="Personnel to verify"
+              value={stats.personnelPending}
+              icon={UserCheck}
+              tone="slate"
+              hint={stats.removals ? `${stats.removals} removal requests` : `${personnel.data.length} in the registry`}
+              href="/personnel"
+            />
+            <Stat label="Bookings" value={total} icon={Clock} tone="sage" hint={`${stats.newThisWeek} new this week · ${stats.customers} customers`} href="/bookings" />
+            <Stat label="Revenue" value={fmtMoney(stats.revenue, settings.currency)} icon={Wallet} tone="sand" hint="Paid or completed bookings" href="/bookings" />
           </>
         )}
       </div>
@@ -215,8 +228,8 @@ export default function DashboardPage() {
             title="Needs your attention"
             meta={stats.pending.length ? `${stats.pending.length} pending` : undefined}
             action={
-              <Link href="/bouncers" className="flex items-center gap-1 text-xs font-medium text-sage transition hover:text-sage-dark">
-                All bouncers <ArrowRight className="h-3.5 w-3.5" />
+              <Link href="/agencies" className="flex items-center gap-1 text-xs font-medium text-sage transition hover:text-sage-dark">
+                All agencies <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             }
           />
@@ -233,17 +246,17 @@ export default function DashboardPage() {
               ))}
             </div>
           ) : stats.pending.length === 0 ? (
-            <Empty compact icon={Sparkles} title="You're all caught up" hint="No bouncer applications are waiting for a decision." />
+            <Empty compact icon={Sparkles} title="You're all caught up" hint="No agency applications are waiting for a decision." />
           ) : (
             <ul className="divide-y divide-line">
               {stats.pending.slice(0, 5).map((b) => (
                 <li key={b.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5">
-                  <Avatar name={b.name} url={b.photoUrl} size={40} />
+                  <Avatar name={b.name} url={b.logoUrl} size={40} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13.5px] font-semibold text-ink">{b.name}</p>
+                    <p className="truncate text-[13.5px] font-semibold text-ink">{b.name || "Unnamed agency"}</p>
                     <p className="truncate text-xs text-muted">
-                      {b.city || "No city"} · {b.experienceYears ?? 0} yrs · {fmtMoney(b.hourlyRate, settings.currency)}/hr
-                      {b.skills?.length ? ` · ${b.skills.slice(0, 2).join(", ")}` : ""}
+                      {b.city || "No city"} · {b.yearsExperience ?? 0} yrs · {b.personnelCount ?? 0} personnel
+                      {b.licenseNo ? ` · licence ${b.licenseNo}` : ""}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -294,10 +307,10 @@ export default function DashboardPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13.5px] text-ink">
                     <span className="font-semibold">{b.customerName}</span> <span className="text-muted">booked</span>{" "}
-                    <span className="font-semibold">{b.bouncerName}</span>
+                    <span className="font-semibold">{b.agencyName}</span>
                   </p>
                   <p className="truncate text-xs text-muted">
-                    {b.eventType} · {fmtDate(b.eventDate, true)} · {b.location}
+                    {b.serviceLabel || b.eventType} · {b.personnelCount ?? 1} staff · {fmtDate(b.eventDate, true)} · {b.location}
                   </p>
                 </div>
                 <span className="text-[13px] font-semibold tabular-nums text-ink">{fmtMoney(b.totalAmount, settings.currency)}</span>

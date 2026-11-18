@@ -7,7 +7,6 @@ import '../state/session.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
 import 'auth/welcome_screen.dart';
-import 'bouncer/bouncer_shell.dart';
 import 'customer/customer_shell.dart';
 
 /// Routes the user to the right module based on auth state and role.
@@ -42,12 +41,12 @@ class RootGate extends StatelessWidget {
           );
         }
         return switch (user.role) {
-          UserRole.bouncer => const BouncerShell(),
           UserRole.customer => const CustomerShell(),
-          UserRole.admin => const _Notice(
-            icon: Icons.admin_panel_settings_outlined,
-            title: 'Admin account',
-            message: 'Admin accounts are managed from the Haven web dashboard.',
+          UserRole.agency || UserRole.admin => const _Notice(
+            icon: Icons.desktop_windows_outlined,
+            title: 'Use the web dashboard',
+            message:
+                'Agency and admin accounts use the Haven web dashboard. This app is for booking security — sign out here and head to the dashboard to manage your work.',
           ),
         };
     }

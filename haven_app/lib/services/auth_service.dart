@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/app_user.dart';
-import '../models/bouncer.dart';
 
 class AuthService {
   FirebaseAuth get _auth => FirebaseAuth.instance;
@@ -23,7 +22,6 @@ class AuthService {
     required String email,
     required String phone,
     required String password,
-    required UserRole role,
   }) async {
     final cred = await _auth.createUserWithEmailAndPassword(
       email: email.trim(),
@@ -37,17 +35,10 @@ class AuthService {
       name: name.trim(),
       email: email.trim(),
       phone: phone.trim(),
-      role: role,
+      // The app is client-only; agencies sign up on the web dashboard.
+      role: UserRole.customer,
     );
-    final batch = _db.batch();
-    batch.set(_db.collection('users').doc(uid), user.toCreateMap());
-    if (role == UserRole.bouncer) {
-      batch.set(
-        _db.collection('bouncers').doc(uid),
-        Bouncer.initialMap(uid, name.trim()),
-      );
-    }
-    await batch.commit();
+    await _db.collection('users').doc(uid).set(user.toCreateMap());
   }
 
   Future<void> resetPassword(String email) =>

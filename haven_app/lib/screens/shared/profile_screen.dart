@@ -9,7 +9,7 @@ import '../../state/session.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
-/// Account screen shared by customers and bouncers.
+/// The client's account screen.
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
   @override
@@ -24,11 +24,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final url = await StorageService().pickAndUploadAvatar(user.uid);
       if (url == null) return;
-      await DbService.instance.updateUser(
-        user.uid,
-        photoUrl: url,
-        isBouncer: user.role == UserRole.bouncer,
-      );
+      await DbService.instance.updateUser(user.uid, photoUrl: url);
       if (mounted) showMessage(context, 'Photo updated');
     } catch (e) {
       if (mounted) showMessage(context, AuthService.friendlyError(e));
@@ -81,7 +77,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         user.uid,
         name: name.text.trim(),
         phone: phone.text.trim(),
-        isBouncer: user.role == UserRole.bouncer,
       );
       if (mounted) showMessage(context, 'Details saved');
     } catch (e) {
@@ -143,9 +138,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           Center(
             child: Text(
-              user.role == UserRole.bouncer
-                  ? 'Security professional'
-                  : 'Haven member',
+              'Haven member',
               style: const TextStyle(color: HavenColors.muted),
             ),
           ),
@@ -212,8 +205,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 message: 'You can sign back in anytime.',
                 confirm: 'Sign out',
               )) {
-                if (context.mounted)
+                if (context.mounted) {
                   await context.read<AuthService>().signOut();
+                }
               }
             },
           ),

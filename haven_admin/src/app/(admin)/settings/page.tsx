@@ -26,6 +26,7 @@ export default function SettingsPage() {
       await saveSettings({
         currency: form.currency.trim().toUpperCase() || "PKR",
         commissionPercent: Math.min(100, Math.max(0, Number(form.commissionPercent) || 0)),
+        taxPercent: Math.min(100, Math.max(0, Number(form.taxPercent) || 0)),
         supportEmail: form.supportEmail.trim(),
         supportPhone: form.supportPhone.trim(),
       });
@@ -39,7 +40,7 @@ export default function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Settings" subtitle="App-wide values shared with the Haven mobile app." />
+      <PageHeader title="Settings" subtitle="App-wide values shared with the client app and agency dashboard." />
       {loading || !form ? (
         <Loading />
       ) : (
@@ -53,7 +54,7 @@ export default function SettingsPage() {
             <Field label="Currency code" hint="ISO code, e.g. PKR, USD, AED">
               <Input value={form.currency} maxLength={3} onChange={(e) => setForm({ ...form, currency: e.target.value })} />
             </Field>
-            <Field label="Commission (%)" hint="Informational, shown to bouncers">
+            <Field label="Commission (%)" hint="Platform fee added to each booking">
               <Input
                 type="number"
                 min={0}
@@ -61,6 +62,16 @@ export default function SettingsPage() {
                 step="0.5"
                 value={form.commissionPercent}
                 onChange={(e) => setForm({ ...form, commissionPercent: Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="Tax (%)" hint="Applied to subtotal + platform fee">
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                step="0.5"
+                value={form.taxPercent}
+                onChange={(e) => setForm({ ...form, taxPercent: Number(e.target.value) })}
               />
             </Field>
             <Field label="Support email">

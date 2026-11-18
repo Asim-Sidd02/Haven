@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum UserRole { customer, bouncer, admin }
+enum UserRole { customer, agency, admin }
 
 UserRole roleFrom(String? v) => UserRole.values.firstWhere(
   (r) => r.name == v,
