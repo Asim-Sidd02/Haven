@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { doc, getDoc, serverTimestamp, setDoc, writeBatch } from "firebase/firestore";
 import { Check, Building2, UserRound } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
 import { friendlyAuthError } from "@/lib/authErrors";
@@ -48,7 +48,15 @@ export default function RegisterPage() {
       const cred = await createUserWithEmailAndPassword(auth(), acct.email.trim(), acct.password);
       await updateProfile(cred.user, { displayName: acct.name.trim() });
       // AuthProvider moves us to "onboarding"; the effect above advances to step 2.
-    } catch (err) { setError(friendlyAuthError(err)); }
+    } catch (err) {
+      // The account may already exist from an earlier attempt that never finished
+      // step 2. If the password matches, sign in and resume instead of blocking.
+      if (/email-already-in-use/.test(String(err))) {
+        try { await signInWithEmailAndPassword(auth(), acct.email.trim(), acct.password); return; }
+        catch { setError("An account with this email already exists. Sign in with its password to continue."); return; }
+      }
+      setError(friendlyAuthError(err));
+    }
     finally { setBusy(false); }
   };
 
@@ -68,15 +76,25 @@ export default function RegisterPage() {
     e.preventDefault();
     setBusy(true); setError("");
     const uid = auth().currentUser!.uid;
+    const batch = writeBatch(db());
+    // A retry after a half-finished attempt must not rewrite the profile (rules forbid it).
+    const existing = state.status === "onboarding" ? state.profile : null;
+    if (!existing?.agencyId) batch.set(doc(db(), "users", uid), userDoc(uid, "owner"));
+    batch.set(doc(db(), "agencies", uid), {
+      name: ag.name.trim(), logoUrl: null, description: "", registrationNo: ag.registrationNo.trim(), licenseNo: ag.licenseNo.trim(),
+      ownerName: acct.name.trim(), email: acct.email.trim().toLowerCase(), phone: acct.phone.trim(), address: "", city: ag.city.trim(),
+      yearsExperience: Number(ag.yearsExperience) || 0, areas: ag.city.trim() ? [ag.city.trim()] : [], workingHours: "24/7", services: {},
+      status: "draft", verified: false, adminRemarks: "", rating: 0, ratingTotal: 0, reviewCount: 0, lastReviewId: null, personnelCount: 0,
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    });
     try {
-      await setDoc(doc(db(), "users", uid), userDoc(uid, "owner"));
-      await setDoc(doc(db(), "agencies", uid), {
-        name: ag.name.trim(), logoUrl: null, description: "", registrationNo: ag.registrationNo.trim(), licenseNo: ag.licenseNo.trim(),
-        ownerName: acct.name.trim(), email: acct.email.trim().toLowerCase(), phone: acct.phone.trim(), address: "", city: ag.city.trim(),
-        yearsExperience: Number(ag.yearsExperience) || 0, areas: ag.city.trim() ? [ag.city.trim()] : [], workingHours: "24/7", services: {},
-        status: "draft", verified: false, adminRemarks: "", rating: 0, ratingTotal: 0, reviewCount: 0, lastReviewId: null, personnelCount: 0,
-        createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-      });
+      // Firestore waits forever when it can't reach the database, so give up after 20s.
+      await Promise.race([
+        batch.commit(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error(
+          "Couldn't reach the database. Check your connection, and that Cloud Firestore is created in the Firebase console.")), 20000)),
+      ]);
+      // AuthProvider sees the new agency and redirects to /overview.
     } catch (err) { setError(friendlyAuthError(err)); setBusy(false); }
   };
 

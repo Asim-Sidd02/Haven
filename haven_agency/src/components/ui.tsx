@@ -3,6 +3,7 @@
 import { createContext, forwardRef, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, Info, Loader2, Search, X } from "lucide-react";
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import { initials } from "@/lib/format";
 
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
@@ -337,7 +338,8 @@ export function Drawer({ open, onClose, title, subtitle, children, footer, width
 }) {
   useEscape(open, onClose);
   if (!open) return null;
-  return (
+  // Portalled to <body> so an animated/transformed page wrapper can't trap the fixed overlay.
+  return createPortal(
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
       <div className="anim-fade absolute inset-0 bg-ink/20 backdrop-blur-[2px]" onClick={onClose} />
       <div className={cx("anim-drawer absolute inset-y-0 right-0 flex w-full flex-col bg-white shadow-pop", width)}>
@@ -351,7 +353,8 @@ export function Drawer({ open, onClose, title, subtitle, children, footer, width
         <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
         {footer && <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line bg-canvas px-6 py-4">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -361,7 +364,7 @@ export function Modal({ open, onClose, title, desc, children, footer, size = "ma
   useEscape(open, onClose);
   const id = useId();
   if (!open) return null;
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[60] grid place-items-center p-4" role="dialog" aria-modal="true" aria-labelledby={id}>
       <div className="anim-fade absolute inset-0 bg-ink/25 backdrop-blur-[2px]" onClick={onClose} />
       <div className={cx("anim-pop relative flex max-h-[90vh] w-full flex-col rounded-2xl bg-white shadow-pop", size)}>
@@ -372,7 +375,8 @@ export function Modal({ open, onClose, title, desc, children, footer, size = "ma
         {children && <div className="overflow-y-auto px-6 py-3">{children}</div>}
         {footer && <div className="flex flex-wrap justify-end gap-2 px-6 pb-6 pt-3">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

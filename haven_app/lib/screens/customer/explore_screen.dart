@@ -93,6 +93,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               stream: _stream,
               builder: (context, snap) {
                 if (snap.hasError) {
+                  debugPrint('Explore: failed to load agencies: ${snap.error}');
                   return const SliverFillRemaining(
                     hasScrollBody: false,
                     child: EmptyState(

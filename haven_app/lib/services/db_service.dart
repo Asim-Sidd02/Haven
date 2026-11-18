@@ -66,12 +66,13 @@ class DbService {
   }
 
   // ---------- agencies ----------
-  /// Approved agencies, best rated first (index: status + rating desc).
+  /// Approved agencies, best rated first. Sorted on the device so the query
+  /// works without a composite Firestore index.
   Stream<List<Agency>> approvedAgencies() => _agencies
       .where('status', isEqualTo: 'approved')
-      .orderBy('rating', descending: true)
       .snapshots()
-      .map((s) => s.docs.map(Agency.fromDoc).toList());
+      .map((s) => s.docs.map(Agency.fromDoc).toList()
+        ..sort((a, b) => b.rating.compareTo(a.rating)));
 
   Stream<Agency?> agencyStream(String id) => _agencies
       .doc(id)

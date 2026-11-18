@@ -1,8 +1,7 @@
 import {
   addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, writeBatch, Timestamp,
 } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { db, storage } from "./firebase";
+import { db } from "./firebase";
 import type { AssignedPerson, Booking, Personnel } from "./types";
 
 export interface Actor { uid: string; name: string; agencyId: string }
@@ -50,11 +49,19 @@ export async function bulkCreate(path: string, rows: Record<string, unknown>[]) 
   }
 }
 
+/** Uploads to Cloudinary (unsigned preset) and returns the file's public https URL. */
 export async function upload(agencyId: string, folder: string, file: File): Promise<string> {
-  const safe = file.name.replace(/[^\w.-]+/g, "_");
-  const r = ref(storage(), `agencies/${agencyId}/${folder}/${Date.now()}_${safe}`);
-  await uploadBytes(r, file, { contentType: file.type });
-  return getDownloadURL(r);
+  const cloud = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+  const preset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+  if (!cloud || !preset) throw new Error("Uploads are not configured. Set the Cloudinary values in .env.local.");
+  const body = new FormData();
+  body.append("file", file);
+  body.append("upload_preset", preset);
+  body.append("folder", `haven/agencies/${agencyId}/${folder}`);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloud}/auto/upload`, { method: "POST", body });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Upload failed: ${json?.error?.message ?? res.statusText}`);
+  return json.secure_url as string;
 }
 
 export const now = () => Timestamp.now();
