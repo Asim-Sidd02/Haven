@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { useData } from "@/components/DataProvider";
 import { useActor } from "@/lib/useActor";
-import { patch } from "@/lib/actions";
+import { missedCheckIns, patch } from "@/lib/actions";
 import { ago, daysUntil, fmtDate, fmtMoney, fmtTime, pluralize, toDate } from "@/lib/format";
 import { bookingStats, earnings, personnelStats } from "@/lib/metrics";
 import { canAccess } from "@/lib/nav";
@@ -30,7 +30,8 @@ export default function Overview() {
     { done: d.personnel.length > 0, label: "Add your personnel", href: "/personnel" },
   ];
   const doneCount = steps.filter((s) => s.done).length;
-  const canSubmit = doneCount === steps.length && ["draft", "rejected"].includes(agency.status);
+  const canSubmit = doneCount === steps.length && ["draft", "rejected", "needs_correction"].includes(agency.status);
+  const missed = useMemo(() => missedCheckIns(d.assignments, d.bookings, d.attendance), [d.assignments, d.bookings, d.attendance]);
 
   /* ---------- the attention inbox: everything that is waiting on the agency ---------- */
   const attention = useMemo(() => {
@@ -39,8 +40,17 @@ export default function Overview() {
     if (emergencies.length) items.push({ icon: <Siren className="h-4 w-4" />, title: `${pluralize(emergencies.length, "emergency incident")} open`, sub: emergencies[0].subject, href: "/support?filter=emergency", urgent: true });
     const reqs = d.bookings.filter((b) => b.status === "pending");
     if (reqs.length) items.push({ icon: <Inbox className="h-4 w-4" />, title: `${pluralize(reqs.length, "new booking request")}`, sub: "Accept or decline so clients aren’t kept waiting", href: "/bookings?tab=requests" });
+    if (missed.length) items.push({ icon: <AlertTriangle className="h-4 w-4" />, title: `${pluralize(missed.length, "missed check-in")}`, sub: `${missed[0].personnelName} hasn’t checked in`, href: "/attendance", urgent: true });
     const toAssign = d.bookings.filter((b) => b.status === "accepted");
     if (toAssign.length) items.push({ icon: <ListChecks className="h-4 w-4" />, title: `${pluralize(toAssign.length, "booking")} need a team`, sub: "Assign personnel to accepted bookings", href: "/assignments" });
+    const declines = d.bookings.filter((b) => b.status === "assigned" && b.declinedIds?.length);
+    if (declines.length) items.push({ icon: <Users className="h-4 w-4" />, title: `${pluralize(declines.length, "booking")} with declined offers`, sub: "Replace the people who declined", href: "/assignments", urgent: true });
+    const awaitingBouncers = d.bookings.filter((b) => b.status === "assigned" && !b.declinedIds?.length);
+    if (awaitingBouncers.length) items.push({ icon: <ListChecks className="h-4 w-4" />, title: `${pluralize(awaitingBouncers.length, "booking")} awaiting bouncers`, sub: "Waiting for assigned people to accept", href: "/assignments" });
+    const fixes = d.personnel.filter((p) => p.verificationStatus === "needs_correction");
+    if (fixes.length) items.push({ icon: <AlertTriangle className="h-4 w-4" />, title: `${pluralize(fixes.length, "person", "people")} need corrections`, sub: "Haven asked for fixes before verifying", href: "/verification", urgent: true });
+    const joins = d.joinRequests.filter((r) => r.status === "pending");
+    if (joins.length) items.push({ icon: <UserPlus className="h-4 w-4" />, title: `${pluralize(joins.length, "join request")}`, sub: "Independent bouncers want to join your agency", href: "/personnel" });
     const changes = d.bookings.filter((b) => b.clientApproval === "changes_requested" && !["cancelled", "completed"].includes(b.status));
     if (changes.length) items.push({ icon: <Users className="h-4 w-4" />, title: `${pluralize(changes.length, "client")} asked for team changes`, sub: changes[0].clientFeedback || "Review their feedback", href: "/assignments", urgent: true });
     const expiring = d.documents.filter((x) => { const n = daysUntil(x.expiresAt); return n !== null && n <= 30; });
@@ -52,7 +62,7 @@ export default function Overview() {
     const unreplied = d.reviews.filter((r) => !r.reply);
     if (unreplied.length) items.push({ icon: <MessageSquare className="h-4 w-4" />, title: `${pluralize(unreplied.length, "review")} without a reply`, sub: "Replying builds client trust", href: "/reviews" });
     return items;
-  }, [d]);
+  }, [d, missed]);
 
   const upcoming = useMemo(() => d.bookings
     .filter((b) => ["accepted", "assigned", "confirmed", "ongoing"].includes(b.status) && (toDate(b.eventDate)?.getTime() ?? 0) > Date.now() - 12 * 3600000)
@@ -82,7 +92,7 @@ export default function Overview() {
             <div>
               <StatusBadge status={agency.status} />
               <h2 className="mt-3 text-lg font-semibold text-ink">
-                {agency.status === "pending" ? "Your agency is under review" : agency.status === "rejected" ? "Your application needs changes" : agency.status === "suspended" ? "Your agency is suspended" : "Get your agency live on Haven"}
+                {agency.status === "pending" ? "Your agency is under review" : agency.status === "rejected" ? "Your application was rejected" : agency.status === "needs_correction" ? "Haven asked for corrections" : agency.status === "suspended" ? "Your agency is suspended" : "Get your agency live on Haven"}
               </h2>
               <p className="mt-1 text-sm text-muted">
                 {agency.status === "pending" ? "We usually review within 2 working days. You can keep adding personnel meanwhile."
@@ -119,7 +129,7 @@ export default function Overview() {
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-[98px]" />)}</div>
       ) : (
         <div className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Stat href="/personnel" label="Registered personnel" value={ps.total} sub={`${ps.underVerification} under verification`} icon={<Users className="h-4 w-4" />} />
+          <Stat href="/personnel" label="Registered personnel" value={ps.total} sub={`${ps.verified} verified · ${ps.pendingVerification} pending · ${ps.needsCorrection} need fixes`} icon={<Users className="h-4 w-4" />} />
           <Stat href="/schedule" label="Available now" value={ps.available} sub={`${ps.assigned} assigned · ${ps.onLeave} on leave`} icon={<Check className="h-4 w-4" />} />
           <Stat href="/bookings?tab=requests" label="New requests" value={bs.requests} sub={`${bs.ongoing} ongoing · ${bs.total} total`} icon={<Inbox className="h-4 w-4" />} />
           {canAccess(role, "payments")
@@ -188,7 +198,8 @@ export default function Overview() {
         <Card>
           <CardHeader title="Bookings at a glance" />
           <div className="grid grid-cols-2 gap-px bg-line sm:grid-cols-4">
-            {[["New", bs.requests], ["Ongoing", bs.ongoing], ["Completed", bs.completed], ["Cancelled", bs.cancelled]].map(([l, v]) => (
+            {[["Awaiting response", bs.requests], ["Awaiting bouncers", d.bookings.filter((b) => b.status === "assigned").length], ["Confirmed", d.bookings.filter((b) => b.status === "confirmed").length], ["Ongoing", d.bookings.filter((b) => b.status === "ongoing").length],
+              ["Completed", bs.completed], ["Cancelled", bs.cancelled], ["Missed check-ins", missed.length], ["Needs correction", ps.needsCorrection]].map(([l, v]) => (
               <div key={l} className="bg-white p-5"><p className="text-[13px] text-muted">{l}</p><p className="tnum mt-1 text-xl font-semibold text-ink">{v}</p></div>
             ))}
           </div>

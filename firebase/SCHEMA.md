@@ -90,7 +90,7 @@ Service keys: `vip_squad`, `bouncers`, `gun_squad`, `personal_security`, `home_s
 ## `documents/{autoId}`
 `agencyId`, `ownerType` (`'agency' \| 'personnel'`), `personnelId` (or null), `personnelName`,
 `type` (`'identity' \| 'training' \| 'license' \| 'background' \| 'registration' \| 'other'`), `name`, `fileUrl`,
-`expiresAt` (`YYYY-MM-DD` or null), `status` (`'pending' \| 'verified' \| 'rejected' \| 'expired'`), `remarks`, `uploadedAt`,
+`expiresAt` (`YYYY-MM-DD` or null), `status` (`'pending' \| 'needs_correction' \| 'verified' \| 'rejected' \| 'expired'`), `remarks`, `uploadedAt`,
 `reviewedBy`, `reviewedAt`. Personnel docs uploaded by the bouncer carry the personnel's current `agencyId` (`''` if independent);
 the bouncer app re-syncs `agencyId` on its own non-verified docs after the bouncer joins an agency.
 Bouncer document types: `identity`, `other` (address proof), `training`, `background`.

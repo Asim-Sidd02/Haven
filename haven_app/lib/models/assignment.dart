@@ -10,7 +10,12 @@ class GeoStamp {
   final double lat;
   final double lng;
   final double accuracy;
-  const GeoStamp({this.at, required this.lat, required this.lng, required this.accuracy});
+  const GeoStamp({
+    this.at,
+    required this.lat,
+    required this.lng,
+    required this.accuracy,
+  });
 
   static GeoStamp? fromMap(dynamic v) => v is Map
       ? GeoStamp(

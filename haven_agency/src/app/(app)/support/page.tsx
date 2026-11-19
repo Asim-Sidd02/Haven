@@ -13,6 +13,7 @@ import { ago, fmtDate, toDate } from "@/lib/format";
 import type { Ticket } from "@/lib/types";
 
 const RANK = { emergency: 0, high: 1, normal: 2 } as const;
+const who = (t: Ticket) => t.reporterId ? (t.reporterName || "Bouncer") : (t.customerName || "Haven team");
 
 export default function Page() { return <Suspense><Support /></Suspense>; }
 
@@ -34,7 +35,7 @@ function Support() {
 
   return (
     <>
-      <PageHeader title="Complaints & support" desc="Client complaints, incidents and conversations with the Haven team. Emergencies always come first."
+      <PageHeader title="Complaints & support" desc="Client complaints, incidents reported by your bouncers, and conversations with the Haven team. Emergencies always come first."
         actions={<Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setNewOpen(true)}>Contact Haven</Button>} />
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
         <Card className={cx("self-start overflow-hidden", sel && "hidden lg:block")}>
@@ -43,7 +44,7 @@ function Support() {
             <ul className="max-h-[70vh] divide-y divide-line overflow-y-auto">{list.map((t) => (
               <li key={t.id}><button onClick={() => select(t.id)} className={cx("w-full px-4 py-3 text-left transition hover:bg-canvas", t.id === openId && "bg-wash", t.priority === "emergency" && t.status !== "resolved" && "border-l-2 border-danger")}>
                 <div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-medium text-ink">{t.subject}</p><span className="shrink-0 text-xs text-faint">{ago(t.updatedAt)}</span></div>
-                <div className="mt-1 flex items-center gap-2"><span className="truncate text-[13px] text-muted">{t.customerName || "Haven team"}</span>
+                <div className="mt-1 flex items-center gap-2"><span className="truncate text-[13px] text-muted">{who(t)}</span>{t.reporterId && <Badge tone="outline">Bouncer</Badge>}
                   {t.priority !== "normal" && <Badge tone={t.priority === "emergency" ? "danger" : "outline"}>{t.priority === "emergency" ? "Emergency" : "High"}</Badge>}<StatusBadge status={t.status} /></div>
               </button></li>
             ))}</ul>
@@ -66,6 +67,7 @@ function Thread({ t, onBack }: { t: Ticket; onBack: () => void }) {
   const send = (body: string) => run(async () => {
     await patch("tickets", t.id, { messages: [...(t.messages ?? []), { by: "agency", name: profile.name, text: body, at: now() }], status: t.status === "open" ? "in_progress" : t.status });
     if (t.customerId) await notify(t.customerId, "message", `${agency.name} replied`, body.slice(0, 120), `ticket:${t.id}`);
+    if (t.reporterId) await notify(t.reporterId, "message", `${agency.name} replied`, body.slice(0, 120), `ticket:${t.id}`);
   }, "", ["Replied to ticket", t.subject]).then((ok) => ok && setText(""));
 
   const setStatus = (status: Ticket["status"], msg: string) => run(() => patch("tickets", t.id, { status }), msg, [`Ticket ${status}`, t.subject]);
@@ -76,14 +78,14 @@ function Thread({ t, onBack }: { t: Ticket; onBack: () => void }) {
         <div>
           <button onClick={onBack} className="mb-1 text-xs text-muted hover:text-ink lg:hidden">← All conversations</button>
           <p className="flex items-center gap-2 font-semibold text-ink">{t.priority === "emergency" && <Siren className="h-4 w-4 text-danger" />}{t.subject}</p>
-          <p className="text-[13px] text-muted">{t.category} · {t.customerName || "Haven team"}{t.bookingId && ` · booking ${t.bookingId.slice(0, 6)}`} · opened {fmtDate(t.createdAt, true)}</p>
+          <p className="text-[13px] text-muted">{t.category} · {who(t)}{t.bookingId && ` · booking ${t.bookingId.slice(0, 6)}`} · opened {fmtDate(t.createdAt, true)}</p>
         </div>
         <div className="flex gap-2">
           {t.status !== "resolved" && t.status !== "escalated" && <Button size="sm" variant="ghost" onClick={() => setStatus("escalated", "Escalated to Haven")}>Escalate</Button>}
           {t.status !== "resolved" ? <Button size="sm" variant="primary" onClick={() => setStatus("resolved", "Marked resolved")}>Resolve</Button> : <Button size="sm" onClick={() => setStatus("open", "Reopened")}>Reopen</Button>}
         </div>
       </div>
-      {t.priority === "emergency" && t.status !== "resolved" && <div className="border-b border-line bg-danger-soft px-5 py-3 text-sm text-danger"><b>Emergency protocol:</b> call the client and your on-site lead now, alert local authorities if anyone is at risk, then log what happened here.</div>}
+      {t.priority === "emergency" && t.status !== "resolved" && <div className="border-b border-line bg-danger-soft px-5 py-3 text-sm text-danger"><b>Emergency protocol:</b> {t.reporterId ? `call ${t.reporterName || "the reporting bouncer"} and your on-site lead now` : "call the client and your on-site lead now"}, alert local authorities if anyone is at risk, then log what happened here.</div>}
       <div className="flex-1 space-y-3 overflow-y-auto bg-canvas p-5">
         {(t.messages ?? []).map((m, i) => {
           const mine = m.by === "agency";
@@ -91,7 +93,7 @@ function Thread({ t, onBack }: { t: Ticket; onBack: () => void }) {
           return (
             <div key={i} className={cx("flex", mine ? "justify-end" : "justify-start")}>
               <div className={cx("max-w-[80%] rounded-2xl px-4 py-2.5 text-sm", mine ? "rounded-br-sm bg-ink text-white" : m.by === "admin" ? "rounded-bl-sm border border-ink/20 bg-white" : "rounded-bl-sm border border-line bg-white")}>
-                <p className={cx("mb-0.5 text-[11px]", mine ? "text-white/60" : "text-muted")}>{m.by === "admin" ? "Haven team" : m.name} · {fmtDate(m.at, true)}</p>
+                <p className={cx("mb-0.5 text-[11px]", mine ? "text-white/60" : "text-muted")}>{m.by === "admin" ? "Haven team" : m.by === "bouncer" ? `${m.name} (bouncer)` : m.name} · {fmtDate(m.at, true)}</p>
                 {link ? <a href={link} target="_blank" rel="noreferrer" className="flex items-center gap-1 underline"><Paperclip className="h-3.5 w-3.5" />Attachment</a> : <p className="whitespace-pre-wrap">{m.text}</p>}
               </div>
             </div>

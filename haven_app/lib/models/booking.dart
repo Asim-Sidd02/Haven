@@ -190,6 +190,7 @@ class Booking {
     BookingStatus.declined,
   ].contains(status);
   bool get canCancel => BookingStatus.cancellable.contains(status);
+
   /// The client may ask the agency to change the team while it is being
   /// put together or confirmed (feedback only; never gates the flow).
   bool get canRequestTeamChanges =>

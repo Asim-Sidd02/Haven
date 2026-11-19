@@ -55,19 +55,26 @@ class StorageService {
     required http.MultipartFile file,
   }) async {
     if (cloudinaryCloudName.isEmpty || cloudinaryUploadPreset.isEmpty) {
-      throw Exception('Uploads are not configured (Cloudinary settings missing).');
+      throw Exception(
+        'Uploads are not configured (Cloudinary settings missing).',
+      );
     }
-    final req = http.MultipartRequest(
-      'POST',
-      Uri.parse('https://api.cloudinary.com/v1_1/$cloudinaryCloudName/$kind/upload'),
-    )
-      ..fields['upload_preset'] = cloudinaryUploadPreset
-      ..fields['folder'] = folder
-      ..files.add(file);
+    final req =
+        http.MultipartRequest(
+            'POST',
+            Uri.parse(
+              'https://api.cloudinary.com/v1_1/$cloudinaryCloudName/$kind/upload',
+            ),
+          )
+          ..fields['upload_preset'] = cloudinaryUploadPreset
+          ..fields['folder'] = folder
+          ..files.add(file);
     final res = await http.Response.fromStream(await req.send());
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode != 200) {
-      throw Exception('Upload failed: ${body['error']?['message'] ?? res.statusCode}');
+      throw Exception(
+        'Upload failed: ${body['error']?['message'] ?? res.statusCode}',
+      );
     }
     return body['secure_url'] as String;
   }

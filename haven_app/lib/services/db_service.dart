@@ -71,8 +71,11 @@ class DbService {
   Stream<List<Agency>> approvedAgencies() => _agencies
       .where('status', isEqualTo: 'approved')
       .snapshots()
-      .map((s) => s.docs.map(Agency.fromDoc).toList()
-        ..sort((a, b) => b.rating.compareTo(a.rating)));
+      .map(
+        (s) =>
+            s.docs.map(Agency.fromDoc).toList()
+              ..sort((a, b) => b.rating.compareTo(a.rating)),
+      );
 
   Stream<Agency?> agencyStream(String id) => _agencies
       .doc(id)
@@ -102,9 +105,10 @@ class DbService {
 
   Stream<List<Booking>> customerBookings(String uid) => _bookings
       .where('customerId', isEqualTo: uid)
-      .orderBy('createdAt', descending: true)
       .snapshots()
-      .map((s) => s.docs.map(Booking.fromDoc).toList());
+      .map((s) => s.docs.map(Booking.fromDoc).toList()
+        ..sort((a, b) => (b.createdAt ?? DateTime.now())
+            .compareTo(a.createdAt ?? DateTime.now())));
 
   Stream<Booking?> bookingStream(String id) => _bookings
       .doc(id)
@@ -176,10 +180,12 @@ class DbService {
   // ---------- reviews ----------
   Stream<List<Review>> agencyReviews(String agencyId) => _reviews
       .where('agencyId', isEqualTo: agencyId)
-      .orderBy('createdAt', descending: true)
-      .limit(30)
       .snapshots()
-      .map((s) => s.docs.map(Review.fromDoc).toList());
+      .map((s) => (s.docs.map(Review.fromDoc).toList()
+            ..sort((a, b) => (b.createdAt ?? DateTime.now())
+                .compareTo(a.createdAt ?? DateTime.now())))
+          .take(30)
+          .toList());
 
   /// Writes the review, marks the booking reviewed and updates the agency's
   /// aggregate rating — atomically, exactly as the rules require.
@@ -345,14 +351,9 @@ class DbService {
     String text, {
     String by = 'customer',
   }) => _tickets.doc(id).update({
-        'messages': FieldValue.arrayUnion([
-          {
-            'by': by,
-            'name': name,
-            'text': text.trim(),
-            'at': Timestamp.now(),
-          },
-        ]),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+    'messages': FieldValue.arrayUnion([
+      {'by': by, 'name': name, 'text': text.trim(), 'at': Timestamp.now()},
+    ]),
+    'updatedAt': FieldValue.serverTimestamp(),
+  });
 }

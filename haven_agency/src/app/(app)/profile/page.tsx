@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
-import { Camera, Star } from "lucide-react";
+import { Camera, Copy, KeyRound, RefreshCw, Send, Star } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { useActor } from "@/lib/useActor";
-import { patch, put, upload } from "@/lib/actions";
+import { patch, put, randomCode, upload } from "@/lib/actions";
 import { fmtDate, splitList } from "@/lib/format";
 import { Button, Callout, Card, CardHeader, Field, Input, PageHeader, StatusBadge, Textarea } from "@/components/ui";
 import type { Payout } from "@/lib/types";
@@ -15,7 +15,7 @@ import type { Payout } from "@/lib/types";
  * so it's always clear whether there's unsaved work.
  */
 export default function ProfilePage() {
-  const { agency, run } = useActor();
+  const { agency, run, toast } = useActor();
   const logoRef = useRef<HTMLInputElement>(null);
   const initial = () => ({
     name: agency.name ?? "", description: agency.description ?? "", registrationNo: agency.registrationNo ?? "", licenseNo: agency.licenseNo ?? "",
@@ -52,7 +52,16 @@ export default function ProfilePage() {
     <div className="pb-24">
       <PageHeader title="Agency profile" desc="This is what clients see in the Haven app. A complete profile gets more bookings." />
 
-      {agency.status === "rejected" && agency.adminRemarks && <div className="mb-6"><Callout tone="warn" title="Changes requested by Haven">{agency.adminRemarks}</Callout></div>}
+      {["rejected", "needs_correction", "draft"].includes(agency.status) && (
+        <div className="mb-6"><Callout tone="warn"
+          title={agency.status === "needs_correction" ? "Haven asked for corrections" : agency.status === "rejected" ? "Your application was rejected" : "Your agency hasn’t been submitted for review yet"}
+          action={<Button size="sm" variant="primary" icon={<Send className="h-3.5 w-3.5" />} disabled={dirty}
+            onClick={() => run(() => patch("agencies", agency.id, { status: "pending" }), "Submitted for review", ["Submitted agency for review"])}>
+            {agency.status === "draft" ? "Submit for review" : "Resubmit for review"}</Button>}>
+          {agency.adminRemarks || "Complete your profile and upload your registration documents, then submit."}
+          {dirty && <p className="mt-1 text-xs text-muted">Save your changes first.</p>}
+        </Callout></div>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
         <div className="space-y-6">
@@ -123,6 +132,22 @@ export default function ProfilePage() {
             <div className="mt-2 flex items-center gap-2"><StatusBadge status={agency.status} />{agency.verified && <StatusBadge status="verified" />}</div>
             <div className="mt-4 flex items-center gap-2 text-sm"><Star className="h-4 w-4 fill-ink text-ink" /><b className="text-ink">{agency.reviewCount ? agency.rating.toFixed(1) : "New"}</b><span className="text-muted">· {agency.reviewCount} reviews</span></div>
             <p className="mt-2 text-xs text-muted">Member since {fmtDate(agency.createdAt)}</p>
+          </Card>
+          <Card className="p-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted">Join code for bouncers</p>
+            {agency.joinCode ? (
+              <div className="mt-2 flex items-center gap-2">
+                <KeyRound className="h-4 w-4 text-muted" />
+                <span className="font-mono text-xl font-semibold tracking-[0.25em] text-ink">{agency.joinCode}</span>
+                <span className="flex-1" />
+                <Button size="sm" variant="ghost" icon={<Copy className="h-3.5 w-3.5" />} onClick={async () => {
+                  try { await navigator.clipboard.writeText(agency.joinCode!); toast("Join code copied"); } catch { toast("Couldn’t copy the code", "error"); }
+                }}>Copy</Button>
+              </div>
+            ) : <p className="mt-2 text-sm text-muted">No join code yet.</p>}
+            <p className="mt-2 text-xs text-muted">Bouncers who registered on their own in the Haven app enter this code to ask to join you. Requests appear under Personnel → Join requests.{agency.status !== "approved" && " Codes work once your agency is approved."}</p>
+            <Button size="sm" className="mt-3" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => run(() => patch("agencies", agency.id, { joinCode: randomCode(6) }), agency.joinCode ? "New join code generated" : "Join code created", ["Generated join code"])}>
+              {agency.joinCode ? "Generate new code" : "Create join code"}</Button>
           </Card>
           <Card className="p-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted">Client preview</p>

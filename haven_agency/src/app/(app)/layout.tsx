@@ -3,14 +3,27 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, ChevronsUpDown, LogOut, Menu, Search, X } from "lucide-react";
+import { Bell, ChevronsUpDown, Lock, LogOut, Menu, Search, ShieldAlert, X } from "lucide-react";
 import { useAuth, useSession } from "@/components/AuthProvider";
 import { DataProvider, useData } from "@/components/DataProvider";
 import { HavenMark } from "@/components/Brand";
 import { CommandPalette } from "@/components/CommandPalette";
-import { Avatar, IconButton, StatusBadge, cx } from "@/components/ui";
+import { Avatar, Button, EmptyState, IconButton, StatusBadge, cx } from "@/components/ui";
 import { NAV_GROUPS, NAV_ITEMS, canAccess, type ModuleKey } from "@/lib/nav";
-import type { StaffRole } from "@/lib/types";
+import type { Agency, StaffRole } from "@/lib/types";
+
+/** Operational modules that stay locked until Haven approves the agency. */
+const LOCKED: ModuleKey[] = ["bookings", "assignments", "attendance", "payments", "payroll", "agreements", "clients"];
+
+function reviewCopy(a: Agency): { title: string; body: string } {
+  switch (a.status) {
+    case "pending": return { title: "Your agency is under review", body: "Haven usually reviews within 2 working days. Meanwhile you can complete your profile, add personnel and upload documents." };
+    case "needs_correction": return { title: "Haven asked for corrections", body: a.adminRemarks ? `Remarks: ${a.adminRemarks}. Fix these on your profile and resubmit.` : "Update your profile or documents and resubmit for review." };
+    case "rejected": return { title: "Your application was rejected", body: a.adminRemarks ? `Remarks: ${a.adminRemarks}. You can fix the issues and resubmit.` : "Fix the issues on your profile and resubmit for review." };
+    case "suspended": return { title: "Your agency is suspended", body: a.adminRemarks ? `Remarks: ${a.adminRemarks}. Contact Haven support to resolve this.` : "Contact Haven support to resolve this." };
+    default: return { title: "Your agency isn’t live yet", body: "Complete your profile, services and documents, then submit your agency for review." };
+  }
+}
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { state } = useAuth();
@@ -54,13 +67,18 @@ function Shell({ children }: { children: React.ReactNode }) {
   const badges = useMemo<Partial<Record<ModuleKey, number>>>(() => ({
     notifications: data.notifications.filter((n) => !n.read).length,
     bookings: data.bookings.filter((b) => b.status === "pending").length,
-    assignments: data.bookings.filter((b) => b.status === "accepted" || b.clientApproval === "changes_requested").length,
+    assignments: data.bookings.filter((b) => b.status === "accepted" || (b.status === "assigned" && !!b.declinedIds?.length)
+      || (["assigned", "confirmed"].includes(b.status) && b.clientApproval === "changes_requested")).length,
+    personnel: data.joinRequests.filter((r) => r.status === "pending").length,
     support: data.tickets.filter((t) => t.status !== "resolved").length,
-    verification: data.personnel.filter((p) => p.verificationStatus === "rejected" || p.verificationStatus === "expired").length,
+    verification: data.personnel.filter((p) => ["rejected", "expired", "needs_correction"].includes(p.verificationStatus)).length,
   }), [data]);
 
   const current = NAV_ITEMS.find((i) => pathname === i.href || pathname.startsWith(i.href + "/"));
   const allowed = !current || canAccess(role, current.key);
+  const approved = agency.status === "approved";
+  const locked = !approved && !!current && LOCKED.includes(current.key);
+  const review = reviewCopy(agency);
 
   const sidebar = (
     <div className="flex h-full flex-col">
@@ -151,9 +169,25 @@ function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
+        {!approved && (
+          <div className={cx("flex flex-wrap items-center gap-3 border-b px-4 py-2.5 text-sm sm:px-6 lg:px-8",
+            ["rejected", "suspended", "needs_correction"].includes(agency.status) ? "border-danger/20 bg-danger-soft text-danger" : "border-line bg-wash text-body")}>
+            <ShieldAlert className="h-4 w-4 shrink-0" />
+            <p className="min-w-0 flex-1"><b className="font-medium">{review.title}.</b> {review.body}</p>
+            {canAccess(role, "profile") && agency.status !== "suspended" && <Link href="/profile" className="shrink-0 text-[13px] font-medium underline-offset-4 hover:underline">Go to profile</Link>}
+          </div>
+        )}
         <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           <div key={pathname} className="anim-page">
-            {allowed ? children : (
+            {allowed && locked ? (
+              <EmptyState className="py-24" icon={<Lock className="h-5 w-5" />} title={`${current?.label} unlocks after approval`}
+                desc={`${review.title}. Bookings, assignments, attendance, payments and agreements open once Haven approves your agency. You can keep onboarding meanwhile: complete your profile, add personnel and upload documents.`}
+                action={<div className="flex flex-wrap justify-center gap-2">
+                  {canAccess(role, "profile") && <Link href="/profile"><Button variant="primary">Agency profile</Button></Link>}
+                  {canAccess(role, "personnel") && <Link href="/personnel"><Button>Personnel</Button></Link>}
+                  {canAccess(role, "verification") && <Link href="/verification"><Button>Documents</Button></Link>}
+                </div>} />
+            ) : allowed ? children : (
               <div className="py-24 text-center">
                 <p className="text-lg font-semibold text-ink">You don’t have access to {current?.label}</p>
                 <p className="mt-1 text-sm text-muted">Your role is <b className="capitalize">{role}</b>. Ask your agency owner if you need access.</p>

@@ -587,15 +587,12 @@ class _AgreementCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
               ),
-              Pill(
-                switch (a.status) {
-                  'sent' => 'Awaiting you',
-                  'accepted' => 'Accepted',
-                  'declined' => 'Declined',
-                  _ => a.status,
-                },
-                color: StatusChip.colorFor(a.status),
-              ),
+              Pill(switch (a.status) {
+                'sent' => 'Awaiting you',
+                'accepted' => 'Accepted',
+                'declined' => 'Declined',
+                _ => a.status,
+              }, color: StatusChip.colorFor(a.status)),
             ],
           ),
           const SizedBox(height: 4),
