@@ -2,12 +2,12 @@
 
 import { useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, UploadCloud } from "lucide-react";
-import { Badge, Button, Checkbox, Modal, Table, Td, Th, cx } from "./ui";
+import { Badge, Button, Modal, Table, Td, Th, cx } from "./ui";
 import { useData } from "./DataProvider";
 import { useActor } from "@/lib/useActor";
 import { bulkCreate, nextCode, patch } from "@/lib/actions";
-import { cleanPhone, downloadPersonnelTemplate, normaliseRow, parseSheet } from "@/lib/excel";
-import { errMsg, splitList } from "@/lib/format";
+import { cleanPhone, downloadPersonnelTemplate, exportXlsx, missingColumns, normaliseRow, parseSheet } from "@/lib/excel";
+import { errMsg, splitList, ymd } from "@/lib/format";
 
 interface Parsed { row: number; data: Record<string, string>; errors: string[]; duplicate: boolean }
 
@@ -24,30 +24,44 @@ export function ImportPersonnel({ open, onClose }: { open: boolean; onClose: () 
   const [rows, setRows] = useState<Parsed[]>([]);
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [submit, setSubmit] = useState(true);
 
   const reset = () => { setFile(null); setRows([]); };
   const close = () => { reset(); onClose(); };
 
   const load = async (f?: File) => {
     if (!f) return;
-    if (!/\.(xlsx|xls|csv)$/i.test(f.name)) { toast("Please choose an Excel (.xlsx) or CSV file.", "error"); return; }
+    if (!/\.(xlsx|xls|csv)$/i.test(f.name)) { toast("Please choose an Excel (.xlsx, .xls) or CSV file.", "error"); return; }
+    if (f.size > 5 * 1024 * 1024) { toast("That file is larger than 5 MB. Split it into smaller sheets.", "error"); return; }
     setBusy(true);
     try {
       const raw = await parseSheet(f);
-      const existing = new Set(personnel.map((p) => cleanPhone(p.phone)));
-      const seen = new Set<string>();
+      const missing = missingColumns(Object.keys(raw[0] ?? {}));
+      if (raw.length && missing.length) { toast(`Missing required column(s): ${missing.join(", ")}. Use the template.`, "error"); return; }
+      const existing = new Map(personnel.map((p) => [cleanPhone(p.phone ?? ""), p.code]));
+      const seen = new Map<string, number>();
+      const num = (v: string, label: string, min: number, max: number, errors: string[]) => {
+        if (!v) return;
+        const n = Number(v);
+        if (!Number.isFinite(n) || n < min || n > max) errors.push(`${label} must be a number between ${min} and ${max}`);
+      };
       const parsed: Parsed[] = raw.map((r, i) => {
         const data = normaliseRow(r);
         const errors: string[] = [];
         const phone = cleanPhone(data.phone);
+        const row = i + 2;
         if (data.name.length < 2) errors.push("Name missing");
-        if (phone.replace(/\D/g, "").length < 10) errors.push("Invalid mobile");
-        if (data.dob && !/^\d{4}-\d{2}-\d{2}$/.test(data.dob)) errors.push("DOB must be YYYY-MM-DD");
+        if (!phone) errors.push("Mobile missing");
+        else if (!/^\+?\d{10,13}$/.test(phone)) errors.push("Invalid mobile");
+        if (data.dob && (!/^\d{4}-\d{2}-\d{2}$/.test(data.dob) || isNaN(new Date(data.dob + "T00:00:00").getTime()))) errors.push("DOB must be YYYY-MM-DD");
         if (data.employmentType && !["full_time", "part_time", "contract"].includes(data.employmentType)) errors.push("Unknown employment type");
-        const duplicate = !!phone && (existing.has(phone) || seen.has(phone));
-        seen.add(phone);
-        return { row: i + 2, data: { ...data, phone } as Record<string, string>, errors, duplicate };
+        if (data.gender && !["male", "female", "other"].includes(data.gender.toLowerCase())) errors.push("Gender must be Male, Female or Other");
+        num(data.experienceYears, "Experience", 0, 60, errors);
+        num(data.heightCm, "Height", 100, 250, errors);
+        num(data.dailyWage, "Daily wage", 0, 1000000, errors);
+        if (phone && existing.has(phone)) errors.push(`Mobile already registered (${existing.get(phone) || "existing record"})`);
+        else if (phone && seen.has(phone)) errors.push(`Duplicate mobile in file (row ${seen.get(phone)})`);
+        if (phone && !seen.has(phone)) seen.set(phone, row);
+        return { row, data: { ...data, phone } as Record<string, string>, errors, duplicate: false };
       }).filter((p) => p.data.name || p.data.phone);
       if (!parsed.length) toast("That sheet looks empty. Use the template and try again.", "error");
       setFile(f); setRows(parsed);
@@ -57,7 +71,14 @@ export function ImportPersonnel({ open, onClose }: { open: boolean; onClose: () 
 
   const valid = useMemo(() => rows.filter((r) => !r.errors.length && !r.duplicate), [rows]);
   const invalid = rows.filter((r) => r.errors.length).length;
-  const dupes = rows.filter((r) => !r.errors.length && r.duplicate).length;
+  const dupes = rows.filter((r) => r.errors.some((e) => /mobile already|duplicate mobile/i.test(e))).length;
+
+  /** Rejected rows with their reasons, so the agency can fix the sheet and re-upload just those. */
+  const errorReport = () => exportXlsx(`personnel-import-errors-${ymd(new Date())}`, rows.filter((r) => r.errors.length).map((r) => ({
+    Row: r.row, "Full name": r.data.name, "Mobile number": r.data.phone, "Date of birth": r.data.dob, Gender: r.data.gender,
+    "Experience (years)": r.data.experienceYears, "Height (cm)": r.data.heightCm, Skills: r.data.skills, Certifications: r.data.certifications,
+    Languages: r.data.languages, Employment: r.data.employmentType, "Daily wage": r.data.dailyWage, Errors: r.errors.join("; "),
+  })), "Rejected rows");
 
   const doImport = async () => {
     setBusy(true);
@@ -66,7 +87,9 @@ export function ImportPersonnel({ open, onClose }: { open: boolean; onClose: () 
       dob: r.data.dob, gender: r.data.gender, experienceYears: Number(r.data.experienceYears) || 0, heightCm: Number(r.data.heightCm) || 0,
       skills: splitList(r.data.skills), certifications: splitList(r.data.certifications), languages: splitList(r.data.languages),
       employmentType: r.data.employmentType || "full_time", dailyWage: Number(r.data.dailyWage) || 0,
-      verificationStatus: submit ? "pending" : "draft", adminRemarks: "", availability: "available", leaveUntil: null, active: true, removalRequested: false,
+      // Bulk-created records are drafts: importing never implies verification.
+      verificationStatus: "draft", adminRemarks: "", userId: null, source: "agency", inviteCode: null,
+      address: "", workDays: [], shifts: [], preferredAreas: [], availability: "available", leaveUntil: null, active: true, removalRequested: false,
     }));
     const ok = await run(async () => {
       await bulkCreate("personnel", docs);
@@ -108,7 +131,7 @@ export function ImportPersonnel({ open, onClose }: { open: boolean; onClose: () 
         <div className="space-y-4">
           <div className="grid grid-cols-3 gap-3">
             <Summary icon={<CheckCircle2 className="h-4 w-4" />} n={valid.length} label="Ready to import" />
-            <Summary icon={<AlertTriangle className="h-4 w-4" />} n={dupes} label="Duplicates, skipped" />
+            <Summary icon={<AlertTriangle className="h-4 w-4" />} n={dupes} label="Duplicate mobiles" />
             <Summary icon={<AlertTriangle className="h-4 w-4" />} n={invalid} label="Rows with errors" danger={invalid > 0} />
           </div>
           <div className="max-h-[38vh] overflow-auto rounded-xl border border-line">
@@ -121,14 +144,15 @@ export function ImportPersonnel({ open, onClose }: { open: boolean; onClose: () 
                     <Td className="font-medium">{r.data.name || "—"}</Td>
                     <Td className="tnum">{r.data.phone || "—"}</Td>
                     <Td className="max-w-[200px] truncate">{r.data.skills || "—"}</Td>
-                    <Td>{r.errors.length ? <Badge tone="danger">{r.errors.join(" · ")}</Badge> : r.duplicate ? <Badge tone="dashed">Already registered</Badge> : <Badge tone="solid">OK</Badge>}</Td>
+                    <Td>{r.errors.length ? <span className="text-xs text-danger">{r.errors.join(" · ")}</span> : <Badge tone="solid">OK</Badge>}</Td>
                   </tr>
                 ))}
               </tbody>
             </Table>
           </div>
-          {invalid > 0 && <p className="text-[13px] text-muted">Rows with errors won’t be imported. Fix them in your sheet and upload again, or import the valid rows now.</p>}
-          <Checkbox checked={submit} onChange={setSubmit} label="Send imported personnel for verification straight away" />
+          {invalid > 0 && <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-[13px] text-muted">Rows with errors won’t be imported. Fix them and upload again, or import the valid rows now.</p>
+            <Button size="sm" icon={<Download className="h-3.5 w-3.5" />} onClick={errorReport}>Download error report</Button></div>}
+          <p className="text-[13px] text-muted">Imported people are saved as <b>drafts</b>. Upload their documents and submit them for verification before they can be assigned.</p>
         </div>
       )}
     </Modal>

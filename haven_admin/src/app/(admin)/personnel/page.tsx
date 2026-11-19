@@ -29,7 +29,7 @@ import {
   Toolbar,
   Tr,
 } from "@/components/ui";
-import { DocumentList, RemarksDialog } from "@/components/Verification";
+import { DocumentList, RemarksDialog, ReviewNote } from "@/components/Verification";
 import { useToast } from "@/components/Toast";
 
 function Info({ label, value }: { label: string; value?: React.ReactNode }) {
@@ -41,7 +41,16 @@ function Info({ label, value }: { label: string; value?: React.ReactNode }) {
   );
 }
 
-type Filter = VerificationStatus | "removal";
+type Filter = VerificationStatus | "independent" | "removal";
+
+const FILTERS: Filter[] = ["pending", "needs_correction", "verified", "rejected", "suspended", "expired", "draft", "independent", "removal"];
+const INDEPENDENT = "__independent";
+const DAY_LABELS: Record<string, string> = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun" };
+
+function AgencyCell({ p, name }: { p: Personnel; name?: string }) {
+  if (!p.agencyId) return <Badge value="independent" label="Independent" dot={false} />;
+  return <>{name ?? "Unknown agency"}</>;
+}
 
 export default function PersonnelPage() {
   const toast = useToast();
@@ -53,7 +62,7 @@ export default function PersonnelPage() {
   const [filter, setFilter] = useState<Filter | "all">("all");
   const [agencyId, setAgencyId] = useState("all");
   const [openId, setOpenId] = useState<string | null>(null);
-  const [rejecting, setRejecting] = useState<{ p: Personnel; status: "rejected" | "suspended" } | null>(null);
+  const [rejecting, setRejecting] = useState<{ p: Personnel; status: "rejected" | "suspended" | "needs_correction" } | null>(null);
   const [deleting, setDeleting] = useState<Personnel | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -61,11 +70,12 @@ export default function PersonnelPage() {
   const selected = data.find((p) => p.id === openId) ?? null;
   const personDocs = useMemo(() => (openId ? documents.data.filter((d) => d.personnelId === openId) : []), [documents.data, openId]);
 
-  const scoped = useMemo(() => data.filter((p) => agencyId === "all" || p.agencyId === agencyId), [data, agencyId]);
+  const scoped = useMemo(() => data.filter((p) => agencyId === "all" || (agencyId === INDEPENDENT ? !p.agencyId : p.agencyId === agencyId)), [data, agencyId]);
 
   const counts = useMemo(() => {
     const c: Partial<Record<Filter | "all", number>> = { all: scoped.length };
     for (const s of VERIFICATION_STATUSES) c[s] = scoped.filter((p) => p.verificationStatus === s).length;
+    c.independent = scoped.filter((p) => !p.agencyId).length;
     c.removal = scoped.filter((p) => p.removalRequested).length;
     return c;
   }, [scoped]);
@@ -73,7 +83,15 @@ export default function PersonnelPage() {
   const rows = useMemo(
     () =>
       scoped
-        .filter((p) => filter === "all" || (filter === "removal" ? p.removalRequested : p.verificationStatus === filter))
+        .filter((p) =>
+          filter === "all"
+            ? true
+            : filter === "removal"
+              ? p.removalRequested
+              : filter === "independent"
+                ? !p.agencyId
+                : p.verificationStatus === filter,
+        )
         .filter((p) => matches(q, p.name, p.code, p.phone, agencyName.get(p.agencyId), ...(p.skills ?? [])))
         .sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0)),
     [scoped, filter, q, agencyName],
@@ -83,7 +101,7 @@ export default function PersonnelPage() {
     setBusy(p.id + status);
     try {
       await setPersonnelStatus(p, status, remarks);
-      toast(`${p.name} is now ${status}.`);
+      toast(`${p.name} is now ${status.replace(/_/g, " ")}.`);
       setRejecting(null);
     } catch (e) {
       toast(errMsg(e), "error");
@@ -109,6 +127,7 @@ export default function PersonnelPage() {
 
   const agencyOptions = [
     { value: "all", label: "All agencies" },
+    { value: INDEPENDENT, label: "Independent (no agency)" },
     ...agencies.data.map((a) => ({ value: a.id, label: a.name || a.id })).sort((a, b) => a.label.localeCompare(b.label)),
   ];
 
@@ -123,9 +142,9 @@ export default function PersonnelPage() {
             <FilterPills
               value={filter}
               onChange={setFilter}
-              options={[...VERIFICATION_STATUSES, "removal"] as Filter[]}
+              options={FILTERS.filter((f) => f === "independent" || f === "removal" || VERIFICATION_STATUSES.includes(f as VerificationStatus))}
               counts={counts}
-              labels={{ removal: "Removal requests" }}
+              labels={{ pending: "Pending verification", removal: "Removal requests" }}
             />
           }
           right={
@@ -157,12 +176,16 @@ export default function PersonnelPage() {
                         <p className="truncate text-xs text-muted">
                           {p.code || "—"}
                           {p.active === false ? " · inactive" : ""}
+                          {p.userId ? <span className="text-sage-dark"> · app linked</span> : null}
+                          {p.verificationStatus === "pending" && p.reviewedBy ? <span className="text-amber"> · resubmitted</span> : null}
                           {p.removalRequested ? <span className="text-rose"> · removal requested</span> : null}
                         </p>
                       </div>
                     </div>
                   </Td>
-                  <Td className="text-muted">{agencyName.get(p.agencyId) ?? "Unknown agency"}</Td>
+                  <Td className="text-muted">
+                    <AgencyCell p={p} name={agencyName.get(p.agencyId)} />
+                  </Td>
                   <Td className="tabular-nums text-muted">{p.experienceYears ?? 0} yrs</Td>
                   <Td className="capitalize text-muted">{(p.availability ?? "—").replace(/_/g, " ")}</Td>
                   <Td>
@@ -201,7 +224,8 @@ export default function PersonnelPage() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-base font-semibold text-ink">{selected.name}</p>
                 <p className="truncate text-xs text-muted">
-                  {selected.code || "—"} · {agencyName.get(selected.agencyId) ?? "Unknown agency"}
+                  {selected.code || "—"} · {selected.agencyId ? (agencyName.get(selected.agencyId) ?? "Unknown agency") : "Independent"}
+                  {selected.userId ? " · App linked" : ""}
                 </p>
               </div>
               <Badge value={selected.verificationStatus} />
@@ -229,6 +253,9 @@ export default function PersonnelPage() {
                 <Button size="sm" disabled={selected.verificationStatus === "verified"} loading={busy === selected.id + "verified"} onClick={() => moderate(selected, "verified")}>
                   Verify
                 </Button>
+                <Button size="sm" variant="secondary" disabled={selected.verificationStatus === "needs_correction"} onClick={() => setRejecting({ p: selected, status: "needs_correction" })}>
+                  Request correction
+                </Button>
                 <Button size="sm" variant="secondary" disabled={selected.verificationStatus === "rejected"} onClick={() => setRejecting({ p: selected, status: "rejected" })}>
                   Reject
                 </Button>
@@ -236,16 +263,15 @@ export default function PersonnelPage() {
                   Suspend
                 </Button>
               </div>
-              {selected.adminRemarks && (
-                <p className="mt-3 rounded-xl bg-cream px-3 py-2 text-xs text-ink">
-                  <span className="font-semibold">Remarks:</span> {selected.adminRemarks}
-                </p>
-              )}
+              <ReviewNote by={selected.reviewedBy} at={selected.reviewedAt} remarks={selected.adminRemarks} />
             </Section>
 
             <Section title="Profile">
               <div className="grid grid-cols-2 gap-4">
                 <Info label="Phone" value={selected.phone} />
+                <Info label="Source" value={selected.source === "independent" || !selected.agencyId ? "Independent bouncer" : "Added by agency"} />
+                <Info label="App account" value={selected.userId ? "Linked" : "Not linked"} />
+                <Info label="Consent given" value={selected.consentAt ? fmtDate(selected.consentAt, true) : ""} />
                 <Info label="Date of birth" value={selected.dob} />
                 <Info label="Gender" value={selected.gender} />
                 <Info label="Height" value={selected.heightCm ? `${selected.heightCm} cm` : ""} />
@@ -259,6 +285,14 @@ export default function PersonnelPage() {
                 <Info label="Active" value={selected.active === false ? "No" : "Yes"} />
                 <Info label="Added" value={fmtDate(selected.createdAt)} />
                 <div className="col-span-2">
+                  <Info label="Address" value={selected.address} />
+                </div>
+                <Info label="Work days" value={(selected.workDays ?? []).map((d) => DAY_LABELS[d] ?? d).join(", ")} />
+                <Info label="Shifts" value={(selected.shifts ?? []).join(", ")} />
+                <div className="col-span-2">
+                  <Info label="Preferred areas" value={(selected.preferredAreas ?? []).join(", ")} />
+                </div>
+                <div className="col-span-2">
                   <Info label="Skills" value={(selected.skills ?? []).join(", ")} />
                 </div>
                 <div className="col-span-2">
@@ -271,7 +305,7 @@ export default function PersonnelPage() {
             </Section>
 
             <Section title="Documents" hint={`${personDocs.length}`}>
-              <DocumentList docs={personDocs} emptyHint="No documents uploaded for this person yet." />
+              <DocumentList docs={personDocs} person={selected} emptyHint="No documents uploaded for this person yet." />
             </Section>
 
             <p className="text-[11px] text-muted">Record ID {selected.id}</p>
@@ -281,9 +315,17 @@ export default function PersonnelPage() {
 
       <RemarksDialog
         open={!!rejecting}
-        title={rejecting?.status === "suspended" ? "Suspend personnel" : "Reject personnel"}
-        confirmLabel={rejecting?.status === "suspended" ? "Suspend" : "Reject"}
-        description={rejecting && <>Tell the agency why <strong className="text-ink">{rejecting.p.name}</strong> wasn&apos;t verified.</>}
+        title={rejecting?.status === "suspended" ? "Suspend personnel" : rejecting?.status === "needs_correction" ? "Request correction" : "Reject personnel"}
+        confirmLabel={rejecting?.status === "suspended" ? "Suspend" : rejecting?.status === "needs_correction" ? "Request correction" : "Reject"}
+        description={
+          rejecting && (
+            <>
+              {rejecting.status === "needs_correction" ? "Explain what needs fixing for " : "Explain why "}
+              <strong className="text-ink">{rejecting.p.name}</strong>
+              {rejecting.status === "needs_correction" ? "." : " wasn't verified."} The agency{rejecting.p.userId ? " and the bouncer" : ""} will be notified.
+            </>
+          )
+        }
         initial={rejecting?.p.adminRemarks ?? ""}
         loading={!!rejecting && busy === rejecting.p.id + rejecting.status}
         onClose={() => setRejecting(null)}

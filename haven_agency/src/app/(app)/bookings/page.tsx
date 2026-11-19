@@ -18,7 +18,7 @@ import type { Booking } from "@/lib/types";
 
 type TabKey = "requests" | "upcoming" | "ongoing" | "completed" | "cancelled" | "all";
 const IN: Record<TabKey, Booking["status"][] | null> = {
-  requests: ["pending"], upcoming: ["accepted", "assigned"], ongoing: ["ongoing"], completed: ["completed"], cancelled: ["cancelled", "declined"], all: null,
+  requests: ["pending"], upcoming: ["accepted", "assigned", "confirmed"], ongoing: ["ongoing"], completed: ["completed"], cancelled: ["cancelled", "declined"], all: null,
 };
 
 export default function Page() { return <Suspense><Bookings /></Suspense>; }
@@ -82,7 +82,7 @@ function Bookings() {
 }
 
 function BookingDrawer({ booking: b, onClose }: { booking: Booking | null; onClose: () => void }) {
-  const { bookings, settings, agreements } = useData();
+  const { bookings, settings, agreements, assignments } = useData();
   const { run, agency } = useActor();
   const confirm = useConfirm();
   const [resched, setResched] = useState(false);
@@ -109,15 +109,23 @@ function BookingDrawer({ booking: b, onClose }: { booking: Booking | null; onClo
           }}>Decline</Button>
           <Button variant="primary" icon={<Check className="h-4 w-4" />} onClick={() => set({ status: "accepted" }, "Accepted. Now assign a team.", "Accepted booking", [`${agency.name} accepted your booking`, "They’ll share your team shortly."])}>Accept</Button>
         </>}
-        {["accepted", "assigned"].includes(b.status) && <Link href={`/assignments?id=${b.id}`}><Button variant={b.status === "accepted" ? "primary" : "secondary"} icon={<Users className="h-4 w-4" />}>{b.assignedIds?.length ? "Change team" : "Assign team"}</Button></Link>}
+        {["accepted", "assigned", "confirmed"].includes(b.status) && <Link href={`/assignments?id=${b.id}`}><Button variant={b.status === "accepted" ? "primary" : "secondary"} icon={<Users className="h-4 w-4" />}>{b.assignedIds?.length ? "Change team" : "Assign team"}</Button></Link>}
+        {b.status === "confirmed" && <Button variant="primary" onClick={async () => {
+          const r = await confirm({ title: "Start this service?", desc: "Marks the booking as in progress. It also starts automatically on the first app check-in.", confirm: "Start service" });
+          if (r.ok) set({ status: "ongoing" }, "Service started", "Started booking", ["Your service has started", `${agency.name} team is on duty.`]);
+        }}>Start service</Button>}
         {b.status === "ongoing" && <Button variant="primary" onClick={async () => {
           const r = await confirm({ title: "Mark as completed?", desc: "Assigned personnel become available again and the client can leave a review.", confirm: "Complete" });
           if (r.ok) set({ status: "completed" }, "Booking completed", "Completed booking", ["Your booking is complete", `Thanks for choosing ${agency.name}. How did we do?`]);
         }}>Mark completed</Button>}
-        {["accepted", "assigned", "ongoing"].includes(b.status) && <Button variant="ghost" icon={<CalendarClock className="h-4 w-4" />} onClick={() => setResched(true)}>Reschedule</Button>}
-        {["accepted", "assigned"].includes(b.status) && <Button variant="ghost" onClick={async () => {
+        {["accepted", "assigned", "confirmed", "ongoing"].includes(b.status) && <Button variant="ghost" icon={<CalendarClock className="h-4 w-4" />} onClick={() => setResched(true)}>Reschedule</Button>}
+        {["accepted", "assigned", "confirmed"].includes(b.status) && <Button variant="ghost" onClick={async () => {
           const r = await confirm({ title: "Cancel this booking?", desc: "Only cancel when you truly can’t serve it. The client is notified immediately.", confirm: "Cancel booking", danger: true, input: { label: "Reason", required: true } });
-          if (r.ok) set({ status: "cancelled", cancelReason: r.text, assigned: [], assignedIds: [] }, "Booking cancelled", "Cancelled booking", [`${agency.name} cancelled your booking`, r.text]);
+          if (r.ok && await set({ status: "cancelled", cancelReason: r.text, assigned: [], assignedIds: [], acceptedIds: [], declinedIds: [] }, "Booking cancelled", "Cancelled booking", [`${agency.name} cancelled your booking`, r.text])) {
+            // Withdraw open offers so the bouncers' apps stop showing the job.
+            await Promise.all(assignments.filter((a) => a.bookingId === b.id && ["offered", "accepted"].includes(a.status))
+              .map((a) => patch("assignments", a.id, { status: "withdrawn" }).catch(() => undefined)));
+          }
         }}>Cancel</Button>}
       </>}>
       {b.clientApproval === "changes_requested" && <div className="mb-5 rounded-xl bg-danger-soft p-4 text-sm text-danger"><b>Client asked for changes:</b> {b.clientFeedback || "No details given."}</div>}
@@ -140,7 +148,7 @@ function BookingDrawer({ booking: b, onClose }: { booking: Booking | null; onClo
         </Section>
         <Section title="Client">
           <div className="flex items-center gap-3"><Avatar name={b.customerName} size={40} /><div><p className="font-medium text-ink">{b.customerName}</p>
-            {["accepted", "assigned", "ongoing"].includes(b.status) && b.customerPhone ? <a href={`tel:${b.customerPhone}`} className="flex items-center gap-1 text-sm text-muted hover:text-ink"><Phone className="h-3.5 w-3.5" />{b.customerPhone}</a>
+            {["accepted", "assigned", "confirmed", "ongoing"].includes(b.status) && b.customerPhone ? <a href={`tel:${b.customerPhone}`} className="flex items-center gap-1 text-sm text-muted hover:text-ink"><Phone className="h-3.5 w-3.5" />{b.customerPhone}</a>
               : <p className="text-xs text-muted">Contact shown after you accept</p>}</div></div>
           <Section title="Requirements"><p className="whitespace-pre-wrap rounded-lg bg-wash p-3 text-sm">{b.requirements || "No special requirements."}</p></Section>
         </Section>
@@ -154,10 +162,17 @@ function BookingDrawer({ booking: b, onClose }: { booking: Booking | null; onClo
         </div>
       </Section>
 
-      <Section title={`Team (${b.assigned?.length ?? 0}/${b.personnelCount})`} action={b.clientApproval !== "none" ? <StatusBadge status={b.clientApproval === "pending" ? "sent" : b.clientApproval} /> : undefined}>
-        {b.assigned?.length ? <div className="grid gap-2 sm:grid-cols-2">{b.assigned.map((p) => (
-          <div key={p.personnelId} className="flex items-center gap-3 rounded-lg border border-line p-2.5"><Avatar name={p.name} url={p.photoUrl} size={32} /><div><p className="text-sm font-medium text-ink">{p.name}</p><p className="font-mono text-xs text-muted">{p.code}</p></div></div>
-        ))}</div> : <p className="text-sm text-muted">No one assigned yet.</p>}
+      <Section title={`Team (${b.acceptedIds?.length ?? 0} of ${b.assigned?.length ?? 0} accepted · ${b.personnelCount} needed)`} action={b.clientApproval === "changes_requested" ? <StatusBadge status="changes_requested" /> : undefined}>
+        {b.assigned?.length ? <div className="grid gap-2 sm:grid-cols-2">{b.assigned.map((p) => {
+          const offer = assignments.find((a) => a.bookingId === b.id && a.personnelId === p.personnelId);
+          const st = b.acceptedIds?.includes(p.personnelId) ? "accepted" : b.declinedIds?.includes(p.personnelId) ? "declined" : offer?.status ?? "offered";
+          return (
+            <div key={p.personnelId} className="flex items-center gap-3 rounded-lg border border-line p-2.5"><Avatar name={p.name} url={p.photoUrl} size={32} />
+              <div className="min-w-0 flex-1"><p className="text-sm font-medium text-ink">{p.name}</p><p className="font-mono text-xs text-muted">{p.code}</p>
+                {st === "declined" && offer?.declineReason && <p className="text-xs text-danger">“{offer.declineReason}”</p>}</div>
+              <StatusBadge status={st} /></div>
+          );
+        })}</div> : <p className="text-sm text-muted">No one assigned yet.</p>}
       </Section>
 
       <Section title="Agreement">

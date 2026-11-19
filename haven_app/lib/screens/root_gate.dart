@@ -7,6 +7,7 @@ import '../state/session.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
 import 'auth/welcome_screen.dart';
+import 'bouncer/bouncer_shell.dart';
 import 'customer/customer_shell.dart';
 
 /// Routes the user to the right module based on auth state and role.
@@ -42,6 +43,7 @@ class RootGate extends StatelessWidget {
         }
         return switch (user.role) {
           UserRole.customer => const CustomerShell(),
+          UserRole.bouncer => const BouncerShell(),
           UserRole.agency || UserRole.admin => const _Notice(
             icon: Icons.desktop_windows_outlined,
             title: 'Use the web dashboard',

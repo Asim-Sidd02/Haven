@@ -45,6 +45,7 @@ export default function SupportPage() {
   const agencies = useCollection<Agency>("agencies");
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<TicketStatus | "all">("all");
+  const [scope, setScope] = useState<"all" | "admin" | "bouncer">("all");
   const [openId, setOpenId] = useState<string | null>(null);
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
@@ -62,9 +63,10 @@ export default function SupportPage() {
     () =>
       data
         .filter((t) => filter === "all" || t.status === filter)
-        .filter((t) => matches(q, t.subject, t.customerName, agencyName.get(t.agencyId), t.bookingId))
+        .filter((t) => scope === "all" || (scope === "admin" ? !t.agencyId : !!t.reporterId))
+        .filter((t) => matches(q, t.subject, t.customerName, t.reporterName, agencyName.get(t.agencyId), t.bookingId))
         .sort((a, b) => rank(a) - rank(b) || (b.updatedAt?.toMillis() ?? 0) - (a.updatedAt?.toMillis() ?? 0)),
-    [data, filter, q, agencyName],
+    [data, filter, scope, q, agencyName],
   );
 
   async function send() {
@@ -98,20 +100,37 @@ export default function SupportPage() {
       <Card>
         <Toolbar
           left={<FilterPills value={filter} onChange={setFilter} options={TICKET_STATUSES} counts={counts} />}
-          right={<SearchBox value={q} onChange={setQ} placeholder="Search subject, customer or agency" />}
+          right={
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="sm:w-48">
+                <Select
+                  value={scope}
+                  onChange={(e) => setScope(e.target.value as "all" | "admin" | "bouncer")}
+                  aria-label="Filter by queue"
+                  options={[
+                    { value: "all", label: "All tickets" },
+                    { value: "admin", label: `Handled by Haven (${data.filter((t) => !t.agencyId).length})` },
+                    { value: "bouncer", label: "From bouncers" },
+                  ]}
+                />
+              </div>
+              <SearchBox value={q} onChange={setQ} placeholder="Search subject, reporter or agency" />
+            </div>
+          }
           count={loading ? undefined : rows.length}
           noun="ticket"
         />
         {!loading && rows.length === 0 ? (
-          <Empty icon={LifeBuoy} title="No tickets" hint="Tickets raised by customers and agencies appear here." />
+          <Empty icon={LifeBuoy} title="No tickets" hint="Tickets raised by customers, agencies and bouncers appear here." />
         ) : (
-          <Table head={["Subject", "Agency", "Customer", "Priority", "Status", "Updated"]}>
+          <Table head={["Subject", "Agency", "Raised by", "Priority", "Status", "Updated"]}>
             {loading ? (
               <SkeletonRows cols={6} />
             ) : (
               rows.map((t) => (
                 <Tr
                   key={t.id}
+                  className={t.priority === "emergency" && t.status !== "resolved" ? "bg-rose-soft/50" : ""}
                   onClick={() => {
                     setOpenId(t.id);
                     setReply("");
@@ -123,8 +142,16 @@ export default function SupportPage() {
                       {t.category} · {t.messages?.length ?? 0} messages
                     </p>
                   </Td>
-                  <Td className="text-muted">{agencyName.get(t.agencyId) ?? "—"}</Td>
-                  <Td className="text-muted">{t.customerName || "—"}</Td>
+                  <Td className="text-muted">{t.agencyId ? (agencyName.get(t.agencyId) ?? "Unknown agency") : <Badge value="admin" label="Haven admin" dot={false} />}</Td>
+                  <Td className="text-muted">
+                    {t.reporterId ? (
+                      <>
+                        {t.reporterName || "Bouncer"} <span className="text-xs">(bouncer)</span>
+                      </>
+                    ) : (
+                      t.customerName || "—"
+                    )}
+                  </Td>
                   <Td>
                     <Badge value={t.priority} dot={false} />
                   </Td>
@@ -148,7 +175,8 @@ export default function SupportPage() {
             <div>
               <p className="text-base font-semibold text-ink">{selected.subject || "No subject"}</p>
               <p className="mt-1 text-xs text-muted">
-                {agencyName.get(selected.agencyId) ?? "Unknown agency"}
+                {selected.agencyId ? (agencyName.get(selected.agencyId) ?? "Unknown agency") : "Handled by Haven admin"}
+                {selected.reporterId ? ` · bouncer ${selected.reporterName || ""}` : ""}
                 {selected.customerName ? ` · ${selected.customerName}` : ""}
                 {selected.bookingId ? ` · booking ${selected.bookingId}` : ""}
               </p>

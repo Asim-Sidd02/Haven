@@ -34,7 +34,7 @@ export function DocUploader({ open, onClose, person, replace, defaultType }: {
           type, name: label, fileUrl, expiresAt: expires || null, status: "pending", remarks: "", uploadedAt: new Date(),
         });
       }
-      if (person && ["draft", "rejected", "expired"].includes(person.verificationStatus)) await patch("personnel", person.id, { verificationStatus: "pending" });
+      if (person && ["draft", "rejected", "needs_correction", "expired"].includes(person.verificationStatus)) await patch("personnel", person.id, { verificationStatus: "pending" });
     }, replace ? "Document resubmitted for verification" : "Document uploaded for verification", [replace ? "Resubmitted document" : "Uploaded document", `${label}${person ? ` · ${person.name}` : ""}`]);
     setBusy(false);
     if (ok) { setFile(null); setName(""); setExpires(""); onClose(); }
@@ -86,7 +86,7 @@ export function DocRow({ d, onResubmit }: { d: AgencyDoc; onResubmit?: () => voi
         {d.remarks && <p className="mt-0.5 text-xs text-danger">{d.remarks}</p>}
       </div>
       <StatusBadge status={expired ? "expired" : d.status} />
-      {(d.status === "rejected" || expired) && onResubmit && <Button size="sm" onClick={onResubmit}>Resubmit</Button>}
+      {(d.status === "rejected" || d.status === "needs_correction" || expired) && onResubmit && <Button size="sm" onClick={onResubmit}>Resubmit</Button>}
       <a href={d.fileUrl} target="_blank" rel="noreferrer" className="rounded p-1 text-muted hover:text-ink" aria-label="Open document"><ExternalLink className="h-4 w-4" /></a>
     </div>
   );

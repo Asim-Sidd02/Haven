@@ -3,8 +3,11 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  Download, FileUp, MoreHorizontal, Pencil, Plane, Power, Send, Trash2, UserPlus, Users, FilePlus2,
+  Check, Copy, Download, FileUp, KeyRound, MessageCircle, MoreHorizontal, Pencil, Plane, Power, RefreshCw, Send, Smartphone, Trash2,
+  UserPlus, Users, FilePlus2, X,
 } from "lucide-react";
+import { deleteDoc, doc, serverTimestamp, writeBatch } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { useData } from "@/components/DataProvider";
 import { PersonnelForm } from "@/components/PersonnelForm";
 import { ImportPersonnel } from "@/components/ImportPersonnel";
@@ -14,21 +17,22 @@ import {
   Select, StatusBadge, TableSkeleton, Tabs, Table, Td, Th, Tr,
 } from "@/components/ui";
 import { useActor } from "@/lib/useActor";
-import { bulkPatch, derivedAvailability, patch } from "@/lib/actions";
+import { bulkPatch, derivedAvailability, nextCode, notify, patch, randomCode } from "@/lib/actions";
 import { exportXlsx } from "@/lib/excel";
 import { ago, fmtDate, matches, pluralize, ymd } from "@/lib/format";
-import type { AgencyDoc, Personnel } from "@/lib/types";
+import type { AgencyDoc, JoinRequest, Personnel } from "@/lib/types";
 import { useConfirm } from "@/components/ui";
 
-type TabKey = "all" | "available" | "assigned" | "on_leave" | "verification" | "inactive";
+type TabKey = "all" | "available" | "assigned" | "on_leave" | "verification" | "inactive" | "requests";
 
 export default function Page() {
   return <Suspense><PersonnelPage /></Suspense>;
 }
 
 function PersonnelPage() {
-  const { personnel, bookings, documents, loading } = useData();
+  const { personnel, bookings, documents, loading, joinRequests } = useData();
   const { run } = useActor();
+  const pendingRequests = joinRequests.filter((r) => r.status === "pending");
   const confirm = useConfirm();
   const params = useSearchParams();
   const router = useRouter();
@@ -105,7 +109,9 @@ function PersonnelPage() {
           { value: "on_leave", label: "On leave", count: counts.on_leave },
           { value: "verification", label: "Not verified", count: counts.verification },
           { value: "inactive", label: "Deactivated", count: counts.inactive },
+          { value: "requests", label: "Join requests", count: pendingRequests.length },
         ]} />
+        {tab === "requests" ? <JoinRequests requests={pendingRequests} /> : <>
         <div className="flex flex-col gap-3 border-b border-line p-4 sm:flex-row">
           <SearchInput value={q} onChange={setQ} placeholder="Search by name, ID, mobile or language" className="flex-1" />
           <div className="sm:w-56">
@@ -127,7 +133,7 @@ function PersonnelPage() {
             <thead>
               <tr>
                 <Th className="w-10"><Checkbox checked={allSel} indeterminate={!allSel && shown.some((p) => sel.has(p.id))} onChange={(v) => setSel(v ? new Set(shown.map((p) => p.id)) : new Set())} label="Select all" /></Th>
-                <Th>Person</Th><Th>Mobile</Th><Th>Experience</Th><Th>Skills</Th><Th>Verification</Th><Th>Availability</Th><Th />
+                <Th>Person</Th><Th>Mobile</Th><Th>Experience</Th><Th>Skills</Th><Th>Verification</Th><Th>Availability</Th><Th>App</Th><Th />
               </tr>
             </thead>
             <tbody>
@@ -145,6 +151,7 @@ function PersonnelPage() {
                   <Td><Chips items={p.skills} max={2} /></Td>
                   <Td><StatusBadge status={p.verificationStatus} /></Td>
                   <Td>{p.active ? <StatusBadge status={p.live} /> : <Badge tone="dashed">Deactivated</Badge>}</Td>
+                  <Td><AppBadge p={p} /></Td>
                   <Td className="text-right"><MoreHorizontal className="ml-auto h-4 w-4 text-faint" /></Td>
                 </Tr>
               ))}
@@ -152,13 +159,14 @@ function PersonnelPage() {
           </Table>
         )}
         {shown.length > 0 && <p className="px-5 py-3 text-xs text-muted">Showing {pluralize(shown.length, "person", "people")}</p>}
+        </>}
       </Card>
 
       <BulkBar count={sel.size} onClear={() => setSel(new Set())}>
         <Button size="sm" variant="ghost" icon={<Users className="h-3.5 w-3.5" />} onClick={() => bulk({ availability: "available", leaveUntil: null }, "Marked available", "Bulk set available")}>Available</Button>
         <Button size="sm" variant="ghost" icon={<Plane className="h-3.5 w-3.5" />} onClick={() => setLeaveFor(ids)}>On leave</Button>
         <Button size="sm" variant="ghost" icon={<Send className="h-3.5 w-3.5" />} onClick={() => {
-          const eligible = personnel.filter((p) => sel.has(p.id) && ["draft", "rejected", "expired"].includes(p.verificationStatus)).map((p) => p.id);
+          const eligible = personnel.filter((p) => sel.has(p.id) && ["draft", "rejected", "needs_correction", "expired"].includes(p.verificationStatus)).map((p) => p.id);
           if (!eligible.length) { run(async () => { throw new Error("None of the selected people need verification."); }, ""); return; }
           run(() => bulkPatch("personnel", eligible, { verificationStatus: "pending" }), `${pluralize(eligible.length, "person", "people")} sent for verification`, ["Bulk submitted for verification", `${eligible.length}`]).then(() => setSel(new Set()));
         }}>Verify</Button>
@@ -228,7 +236,14 @@ function PersonDrawer({ person: p, docs, onClose, onEdit, onLeave }: {
           : <Button onClick={() => run(() => patch("personnel", p.id, { availability: "available", leaveUntil: null }), "Back from leave", ["Marked available", p.name])}>End leave</Button>}
         <Button variant="primary" icon={<Pencil className="h-4 w-4" />} onClick={() => onEdit(p)}>Edit</Button>
       </>}>
-      {p.adminRemarks && p.verificationStatus === "rejected" && <div className="mb-5 rounded-xl bg-danger-soft p-4 text-sm text-danger"><b>Admin remarks:</b> {p.adminRemarks}</div>}
+      {p.adminRemarks && ["rejected", "needs_correction"].includes(p.verificationStatus) && (
+        <div className="mb-5 rounded-xl bg-danger-soft p-4 text-sm text-danger">
+          <b>{p.verificationStatus === "needs_correction" ? "Haven asked for corrections:" : "Admin remarks:"}</b> {p.adminRemarks}
+          {p.verificationStatus === "needs_correction" && <p className="mt-1 text-xs">Fix the details (Edit) or replace documents below, then resubmit.</p>}
+          {["needs_correction", "rejected"].includes(p.verificationStatus) && <div className="mt-3"><Button size="sm" variant="primary" icon={<Send className="h-3.5 w-3.5" />}
+            onClick={() => run(() => patch("personnel", p.id, { verificationStatus: "pending" }), `${p.name} resubmitted for verification`, ["Resubmitted personnel", p.name])}>Resubmit</Button></div>}
+        </div>
+      )}
       {p.availability === "on_leave" && p.leaveUntil && <div className="mb-5 rounded-xl bg-wash p-3 text-sm">On leave until <b>{fmtDate(new Date(p.leaveUntil + "T00:00:00"))}</b></div>}
 
       <div className="grid gap-x-8 sm:grid-cols-2">
@@ -245,6 +260,15 @@ function PersonDrawer({ person: p, docs, onClose, onEdit, onLeave }: {
           </div>
         </Section>
       </div>
+      <Section title="Work preferences">
+        <div className="divide-y divide-line">
+          <KV k="Address" v={p.address} /><KV k="Work days" v={(p.workDays ?? []).map((d) => d.slice(0, 1).toUpperCase() + d.slice(1)).join(", ")} />
+          <KV k="Shifts" v={(p.shifts ?? []).join(", ")} /><KV k="Preferred areas" v={(p.preferredAreas ?? []).join(", ")} />
+          <KV k="Source" v={p.source === "independent" ? "Joined via request" : "Added by agency"} />
+          {p.consentAt && <KV k="Declarations accepted" v={fmtDate(p.consentAt, true)} />}
+        </div>
+      </Section>
+      <AppInvite p={p} />
       <Section title="Skills & certifications">
         <div className="space-y-2"><Chips items={p.skills} max={20} /><Chips items={p.certifications} max={20} /></div>
       </Section>
@@ -274,5 +298,121 @@ function PersonDrawer({ person: p, docs, onClose, onEdit, onLeave }: {
       )}
       <DocUploader open={upload.open} replace={upload.replace} person={p} onClose={() => setUpload({ open: false, replace: null })} />
     </Drawer>
+  );
+}
+
+function AppBadge({ p }: { p: Personnel }) {
+  return p.userId ? <Badge tone="dark"><Smartphone className="h-3 w-3" />App linked</Badge> : <Badge tone="dashed">Not on app</Badge>;
+}
+
+const INVITE_TEXT = (name: string, agency: string, code: string) =>
+  `Hi ${name.split(" ")[0]}, ${agency} has invited you to the Haven app.\n1. Install the Haven app\n2. Sign up and choose “I provide security”\n3. Enter your invite code: ${code}\nYou’ll get job offers and can check in to duty from the app.`;
+
+/** Personal invite code that links this record to the bouncer's Haven app account. */
+function AppInvite({ p }: { p: Personnel }) {
+  const { personnelInvites } = useData();
+  const { run, agency, toast } = useActor();
+  const confirm = useConfirm();
+  const invite = personnelInvites.find((i) => i.code === p.inviteCode && i.personnelId === p.id);
+  const code = p.inviteCode ?? "";
+
+  const generate = async () => {
+    if (code) {
+      const r = await confirm({ title: "Generate a new code?", desc: "The old code stops working immediately.", confirm: "Generate" });
+      if (!r.ok) return;
+    }
+    const next = randomCode(8);
+    await run(async () => {
+      const b = writeBatch(db());
+      b.set(doc(db(), "personnelInvites", next), {
+        code: next, personnelId: p.id, agencyId: agency.id, agencyName: agency.name, name: p.name, phone: p.phone ?? "",
+        usedBy: null, usedAt: null, createdAt: serverTimestamp(),
+      });
+      b.update(doc(db(), "personnel", p.id), { inviteCode: next, updatedAt: serverTimestamp() });
+      await b.commit();
+      if (code) await deleteDoc(doc(db(), "personnelInvites", code)).catch(() => undefined);
+    }, code ? "New invite code generated" : "Invite code created", ["Invited personnel to app", p.name]);
+  };
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(code); toast("Code copied"); } catch { toast("Couldn’t copy. Select the code and copy it manually.", "error"); }
+  };
+  const phone = (p.phone ?? "").replace(/\D/g, "");
+  const wa = `https://wa.me/${phone.length === 10 ? "91" + phone : phone}?text=${encodeURIComponent(INVITE_TEXT(p.name, agency.name, code))}`;
+
+  return (
+    <Section title="Haven app" desc={p.userId ? undefined : "Bouncers get job offers, respond and check in from the Haven app."}>
+      {p.userId ? (
+        <p className="flex items-center gap-2 rounded-lg bg-wash p-3 text-sm"><Smartphone className="h-4 w-4" /><b className="font-medium text-ink">App linked.</b> {p.name.split(" ")[0]} receives offers in the app.</p>
+      ) : code ? (
+        <div className="space-y-3 rounded-lg border border-line p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <KeyRound className="h-4 w-4 text-muted" />
+            <span className="font-mono text-lg font-semibold tracking-[0.2em] text-ink">{code}</span>
+            {invite?.usedBy && <Badge tone="dark">Redeemed</Badge>}
+            <span className="flex-1" />
+            <Button size="sm" icon={<Copy className="h-3.5 w-3.5" />} onClick={copy}>Copy</Button>
+            {phone && <a href={wa} target="_blank" rel="noreferrer"><Button size="sm" icon={<MessageCircle className="h-3.5 w-3.5" />}>Share on WhatsApp</Button></a>}
+            <Button size="sm" variant="ghost" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={generate}>Regenerate</Button>
+          </div>
+          <p className="text-xs text-muted">Ask {p.name.split(" ")[0]} to install the Haven app, sign up as “I provide security” and enter this code.</p>
+        </div>
+      ) : (
+        <Button size="sm" icon={<Smartphone className="h-3.5 w-3.5" />} onClick={generate}>Invite to app</Button>
+      )}
+    </Section>
+  );
+}
+
+/** Independent bouncers who used this agency's join code. Only owners/managers can accept. */
+function JoinRequests({ requests }: { requests: JoinRequest[] }) {
+  const { personnel } = useData();
+  const { run, agency, role } = useActor();
+  const confirm = useConfirm();
+  const canAnswer = role === "owner" || role === "manager";
+
+  const accept = (r: JoinRequest) => run(async () => {
+    const b = writeBatch(db());
+    b.update(doc(db(), "personnel", r.personnelId), {
+      agencyId: agency.id, code: nextCode(personnel), employmentType: "contract", dailyWage: 0, updatedAt: serverTimestamp(),
+    });
+    b.update(doc(db(), "joinRequests", r.id), { status: "accepted", respondedAt: serverTimestamp() });
+    await b.commit();
+    await notify(r.userId, "verification", `${agency.name} accepted your request`, "You’re now part of the team. You’ll receive job offers in the app.", "agency");
+  }, `${r.name} joined your agency`, ["Accepted join request", r.name]);
+
+  const reject = async (r: JoinRequest) => {
+    const c = await confirm({ title: `Reject ${r.name}’s request?`, confirm: "Reject", danger: true });
+    if (!c.ok) return;
+    await run(async () => {
+      await patch("joinRequests", r.id, { status: "rejected", respondedAt: serverTimestamp() }, false);
+      await notify(r.userId, "verification", `${agency.name} declined your request`, "You can request to join another agency.", "agency");
+    }, "Request rejected", ["Rejected join request", r.name]);
+  };
+
+  if (!requests.length) return <EmptyState icon={<UserPlus className="h-5 w-5" />} title="No join requests"
+    desc="Independent bouncers who enter your agency’s join code (see Agency profile) appear here." />;
+  return (
+    <div>
+      {!canAnswer && <p className="border-b border-line bg-wash px-5 py-2.5 text-[13px] text-muted">Only the owner or a manager can accept or reject requests.</p>}
+      <Table>
+        <thead><tr><Th>Person</Th><Th>Mobile</Th><Th>Experience</Th><Th>Skills</Th><Th>Requested</Th><Th /></tr></thead>
+        <tbody>
+          {requests.map((r) => (
+            <Tr key={r.id}>
+              <Td><div className="flex items-center gap-3"><Avatar name={r.name} url={r.photoUrl} size={34} /><span className="font-medium text-ink">{r.name}</span></div></Td>
+              <Td className="tnum">{r.phone}</Td>
+              <Td className="tnum">{r.experienceYears ? `${r.experienceYears} yrs` : "—"}</Td>
+              <Td><Chips items={r.skills} max={3} /></Td>
+              <Td className="text-muted">{ago(r.createdAt)}</Td>
+              <Td className="text-right">{canAnswer && <div className="flex justify-end gap-2">
+                <Button size="sm" variant="ghost" icon={<X className="h-3.5 w-3.5" />} onClick={() => reject(r)}>Reject</Button>
+                <Button size="sm" variant="primary" icon={<Check className="h-3.5 w-3.5" />} onClick={() => accept(r)}>Accept</Button>
+              </div>}</Td>
+            </Tr>
+          ))}
+        </tbody>
+      </Table>
+    </div>
   );
 }

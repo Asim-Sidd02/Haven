@@ -6,7 +6,7 @@ import { db } from "@/lib/firebase";
 import { useSession } from "./AuthProvider";
 import {
   DEFAULT_SETTINGS, type Activity, type AgencyDoc, type Agreement, type AppSettings, type AppUser, type Attendance,
-  type Booking, type Invite, type Notice, type Payroll, type Personnel, type Review, type Ticket, type Transaction,
+  type Assignment, type Booking, type Invite, type JoinRequest, type PersonnelInvite, type Notice, type Payroll, type Personnel, type Review, type Ticket, type Transaction,
 } from "@/lib/types";
 
 interface Data {
@@ -23,13 +23,16 @@ interface Data {
   activity: Activity[];
   staff: AppUser[];
   invites: Invite[];
+  assignments: Assignment[];
+  joinRequests: JoinRequest[];
+  personnelInvites: PersonnelInvite[];
   settings: AppSettings;
   loading: boolean;
 }
 
 const EMPTY: Data = {
   personnel: [], bookings: [], documents: [], attendance: [], agreements: [], payroll: [], transactions: [],
-  notifications: [], reviews: [], tickets: [], activity: [], staff: [], invites: [], settings: DEFAULT_SETTINGS, loading: true,
+  notifications: [], reviews: [], tickets: [], activity: [], staff: [], invites: [], assignments: [], joinRequests: [], personnelInvites: [], settings: DEFAULT_SETTINGS, loading: true,
 };
 
 const Ctx = createContext<Data>(EMPTY);
@@ -62,6 +65,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       ["activity", "activity", "agencyId", true],
       ["staff", "users", "agencyId", true],
       ["invites", "invites", "agencyId", ["owner", "manager"].includes(role)],
+      ["assignments", "assignments", "agencyId", true],
+      ["joinRequests", "joinRequests", "agencyId", true],
+      ["personnelInvites", "personnelInvites", "agencyId", true],
     ];
     let pending = sources.filter((s) => s[3]).length + 1;
     const settle = () => { pending = Math.max(0, pending - 1); if (pending === 0) setData((d) => ({ ...d, loading: false })); };

@@ -114,7 +114,27 @@ export function Section({ title, hint, children, className = "" }: { title: stri
 /*  Badges, stars, avatars                                             */
 /* ------------------------------------------------------------------ */
 
+/** Human labels for statuses / roles that read badly when just de-underscored. */
+export const STATUS_LABELS: Record<string, string> = {
+  needs_correction: "Needs correction",
+  confirmed: "Confirmed",
+  assigned: "Awaiting bouncers",
+  bouncer: "Bouncer",
+  in_progress: "In progress",
+};
+
+export function statusLabel(v: string): string {
+  const l = STATUS_LABELS[v] ?? v.replace(/_/g, " ");
+  return l.charAt(0).toUpperCase() + l.slice(1);
+}
+
 const TONES: Record<string, string> = {
+  needs_correction: "bg-amber-soft text-amber",
+  confirmed: "bg-sage-soft text-sage-dark",
+  bouncer: "bg-sand-soft text-sand-dark",
+  independent: "bg-sand-soft text-sand-dark",
+  offered: "bg-amber-soft text-amber",
+  withdrawn: "bg-[#eeeae5] text-muted",
   pending: "bg-amber-soft text-amber",
   approved: "bg-sage-soft text-sage-dark",
   accepted: "bg-sage-soft text-sage-dark",
@@ -145,6 +165,9 @@ const TONES: Record<string, string> = {
 };
 
 const DOTS: Record<string, string> = {
+  needs_correction: "bg-amber",
+  confirmed: "bg-sage",
+  offered: "bg-amber",
   pending: "bg-amber",
   approved: "bg-sage",
   accepted: "bg-sage",
@@ -165,12 +188,12 @@ const DOTS: Record<string, string> = {
 export function Badge({ value, label, dot = true }: { value: string; label?: string; dot?: boolean }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-[3px] text-[11.5px] font-semibold capitalize leading-4 ${
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-[3px] text-[11.5px] font-semibold leading-4 ${
         TONES[value] ?? "bg-cream text-muted"
       }`}
     >
       {dot && DOTS[value] && <span className={`h-1.5 w-1.5 rounded-full ${DOTS[value]}`} />}
-      {label ?? value.replace(/_/g, " ")}
+      {label ?? statusLabel(value)}
     </span>
   );
 }
@@ -408,11 +431,11 @@ export function FilterPills<T extends string>({
             aria-selected={active}
             type="button"
             onClick={() => onChange(o)}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-medium capitalize transition duration-150 ${FOCUS} ${
+            className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition duration-150 ${FOCUS} ${
               active ? "bg-white text-ink shadow-[0_1px_2px_rgba(47,58,54,.08)]" : "text-muted hover:text-ink"
             }`}
           >
-            {labels?.[o] ?? o}
+            {labels?.[o] ?? statusLabel(o)}
             {counts?.[o] !== undefined && (
               <span className={`rounded-md px-1.5 py-px text-[10.5px] tabular-nums ${active ? "bg-sage-soft text-sage-dark" : "bg-white/70 text-muted"}`}>
                 {counts[o]}

@@ -5,7 +5,7 @@ import { Pencil, Trash2, Users as UsersIcon } from "lucide-react";
 import { useCollection } from "@/hooks/useCollection";
 import { deleteUserEverywhere, updateUser } from "@/lib/actions";
 import { errMsg, fmtDate, matches } from "@/lib/format";
-import { ROLES, type Agency, type AppUser, type Role } from "@/lib/types";
+import { ROLES, type Agency, type AppUser, type Personnel, type Role } from "@/lib/types";
 import {
   Avatar,
   Badge,
@@ -17,6 +17,7 @@ import {
   ErrorNote,
   Field,
   FilterPills,
+  statusLabel,
   IconButton,
   Input,
   PageHeader,
@@ -48,6 +49,8 @@ export default function UsersPage() {
   const { data, loading, error } = useCollection<AppUser>("users");
   const agencies = useCollection<Agency>("agencies");
   const agencyName = useMemo(() => new Map(agencies.data.map((a) => [a.id, a.name])), [agencies.data]);
+  const personnel = useCollection<Personnel>("personnel");
+  const personnelName = useMemo(() => new Map(personnel.data.map((p) => [p.id, p.name])), [personnel.data]);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Role | "all">("all");
   const [editing, setEditing] = useState<AppUser | null>(null);
@@ -159,6 +162,9 @@ export default function UsersPage() {
                   <Td>
                     <Badge value={u.role} dot={false} />
                     {u.role === "agency" && u.staffRole && <p className="mt-1 text-xs capitalize text-muted">{u.staffRole}</p>}
+                    {u.role === "bouncer" && (
+                      <p className="mt-1 text-xs text-muted">{u.personnelId ? `Personnel: ${personnelName.get(u.personnelId) ?? u.personnelId}` : "Not linked"}</p>
+                    )}
                   </Td>
                   <Td className="text-muted">{u.agencyId ? agencyName.get(u.agencyId) ?? u.agencyId : "—"}</Td>
                   <Td>
@@ -256,9 +262,16 @@ export default function UsersPage() {
                     value={form.role}
                     disabled={isMe}
                     onChange={(e) => setForm({ ...form, role: e.target.value as Role })}
-                    options={ROLES.map((r) => ({ value: r, label: r }))}
+                    options={ROLES.map((r) => ({ value: r, label: statusLabel(r) }))}
                   />
                 </Field>
+                {editing.role === "bouncer" && (
+                  <div className="rounded-xl bg-cream p-4 text-[13px]">
+                    <p className="text-[11px] uppercase tracking-[0.1em] text-muted">Linked personnel record</p>
+                    <p className="mt-0.5 break-words text-ink">{editing.personnelId ? personnelName.get(editing.personnelId) ?? "Unknown record" : "Not linked yet"}</p>
+                    {editing.personnelId && <p className="break-all text-[11px] text-muted">{editing.personnelId}</p>}
+                  </div>
+                )}
                 {editing.role === "agency" && (
                   <div className="grid grid-cols-2 gap-4 rounded-xl bg-cream p-4 text-[13px]">
                     <div className="min-w-0">

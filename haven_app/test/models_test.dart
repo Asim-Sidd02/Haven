@@ -11,6 +11,7 @@ void main() {
       'pending',
       'accepted',
       'assigned',
+      'confirmed',
       'ongoing',
       'completed',
     ]);
@@ -19,7 +20,8 @@ void main() {
   test('roles map to customer / agency / admin', () {
     expect(roleFrom('agency'), UserRole.agency);
     expect(roleFrom('admin'), UserRole.admin);
-    expect(roleFrom('bouncer'), UserRole.customer);
+    expect(roleFrom('bouncer'), UserRole.bouncer);
+    expect(roleFrom('unknown'), UserRole.customer);
   });
 
   test('price breakdown follows the schema formula', () {

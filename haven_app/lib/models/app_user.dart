@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum UserRole { customer, agency, admin }
+enum UserRole { customer, agency, admin, bouncer }
 
 UserRole roleFrom(String? v) => UserRole.values.firstWhere(
   (r) => r.name == v,
@@ -17,6 +17,9 @@ class AppUser {
   final bool isActive;
   final DateTime? createdAt;
 
+  /// Bouncer accounts only: linked `personnel` doc id (null until linked).
+  final String? personnelId;
+
   AppUser({
     required this.uid,
     required this.name,
@@ -26,6 +29,7 @@ class AppUser {
     this.photoUrl,
     this.isActive = true,
     this.createdAt,
+    this.personnelId,
   });
 
   factory AppUser.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -39,6 +43,9 @@ class AppUser {
       role: roleFrom(d['role']),
       isActive: d['isActive'] ?? true,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate(),
+      personnelId: (d['personnelId'] as String?)?.isEmpty == true
+          ? null
+          : d['personnelId'] as String?,
     );
   }
 
@@ -50,6 +57,8 @@ class AppUser {
     'photoUrl': photoUrl,
     'role': role.name,
     'isActive': true,
+    // Bouncers are linked to a personnel record later (rules require null).
+    if (role == UserRole.bouncer) 'personnelId': null,
     'createdAt': FieldValue.serverTimestamp(),
   };
 }

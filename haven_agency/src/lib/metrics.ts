@@ -24,6 +24,9 @@ export function personnelStats(personnel: Personnel[], bookings: Booking[]) {
     assigned: avail.filter((a) => a === "assigned").length,
     onLeave: avail.filter((a) => a === "on_leave").length,
     underVerification: personnel.filter((p) => ["pending", "draft"].includes(p.verificationStatus)).length,
+    verified: personnel.filter((p) => p.verificationStatus === "verified").length,
+    pendingVerification: personnel.filter((p) => p.verificationStatus === "pending").length,
+    needsCorrection: personnel.filter((p) => p.verificationStatus === "needs_correction").length,
   };
 }
 
@@ -32,7 +35,7 @@ export function bookingStats(bookings: Booking[]) {
   return {
     total: bookings.length,
     requests: c(["pending"]),
-    ongoing: c(["accepted", "assigned", "ongoing"]),
+    ongoing: c(["accepted", "assigned", "confirmed", "ongoing"]),
     completed: c(["completed"]),
     cancelled: c(["cancelled", "declined"]),
   };

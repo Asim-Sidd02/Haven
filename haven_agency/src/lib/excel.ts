@@ -51,6 +51,16 @@ export async function downloadPersonnelTemplate() {
   XLSX.writeFile(wb, "haven-personnel-template.xlsx");
 }
 
+/** Which required template columns are missing from a sheet's header row. */
+export function missingColumns(headers: string[]): string[] {
+  const norm = (s: string) => s.toLowerCase().replace(/\(.*?\)|\*/g, "").replace(/[^a-z]/g, "");
+  const have = new Set(headers.map(norm));
+  const out: string[] = [];
+  if (!have.has(norm("Full name")) && !have.has("name")) out.push("Full name");
+  if (!have.has(norm("Mobile number")) && !have.has("phone") && !have.has("mobile")) out.push("Mobile number");
+  return out;
+}
+
 /** Map a sheet row to template keys, tolerating header variations ("Full name", "name", "NAME *"). */
 export function normaliseRow(r: Row): Record<string, string> {
   const norm = (s: string) => s.toLowerCase().replace(/\(.*?\)|\*/g, "").replace(/[^a-z]/g, "");

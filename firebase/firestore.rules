@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Haven — Firestore security rules (v2: agency marketplace). See SCHEMA.md.
+// Haven — Firestore security rules (v3: agency marketplace + bouncer app). See SCHEMA.md.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -20,6 +20,18 @@ service cloud.firestore {
     function oldAgency() { return resource.data.agencyId; }
     function inviteFor(email) { return /databases/$(database)/documents/invites/$(email); }
 
+    // ---- bouncers: role 'bouncer', linked to one personnel record via users.personnelId ----
+    function isBouncer() { return hasProfile() && me().role == 'bouncer' && me().isActive == true; }
+    function myPersonnel() { return me().get('personnelId', null); }
+    function personnelPath(id) { return /databases/$(database)/documents/personnel/$(id); }
+    function bookingPath(id) { return /databases/$(database)/documents/bookings/$(id); }
+    function invitePath(code) { return /databases/$(database)/documents/personnelInvites/$(code); }
+    // Only `pid` was added to / removed from the list field `key`.
+    function onlyToggled(key, pid) {
+      return request.resource.data.get(key, []).toSet().difference(resource.data.get(key, []).toSet()).hasOnly([pid])
+        && resource.data.get(key, []).toSet().difference(request.resource.data.get(key, []).toSet()).hasOnly([pid]);
+    }
+
     // ---------- users ----------
     match /users/{userId} {
       allow read: if signedIn() && (uid() == userId || isAdmin()
@@ -29,6 +41,10 @@ service cloud.firestore {
         && (
           // Client app sign-up.
           (request.resource.data.role == 'customer')
+          // Bouncer app sign-up; linked to a personnel record afterwards.
+          || (request.resource.data.role == 'bouncer'
+              && request.resource.data.get('personnelId', null) == null
+              && request.resource.data.get('agencyId', null) == null)
           // New agency owner: the agency id is their own uid.
           || (request.resource.data.role == 'agency'
               && request.resource.data.agencyId == uid()
@@ -41,7 +57,13 @@ service cloud.firestore {
         );
       allow update: if isAdmin()
         || (signedIn() && uid() == userId
-            && !changed().hasAny(['role', 'isActive', 'createdAt', 'agencyId', 'staffRole']))
+            && !changed().hasAny(['role', 'isActive', 'createdAt', 'agencyId', 'staffRole', 'personnelId']))
+        // Bouncer links their account to a personnel record exactly once, in the same
+        // write that sets personnel.userId (invite redemption or independent registration).
+        || (signedIn() && uid() == userId && resource.data.role == 'bouncer'
+            && resource.data.get('personnelId', null) == null
+            && changed().hasOnly(['personnelId'])
+            && getAfter(personnelPath(request.resource.data.personnelId)).data.userId == uid())
         // Owner/manager manages their staff (never another owner, never themselves).
         || (isOwner() && resource.data.agencyId == myAgency() && userId != uid()
             && resource.data.staffRole != 'owner'
@@ -61,6 +83,40 @@ service cloud.firestore {
       allow delete: if isAdmin() || (isOwner() && resource.data.agencyId == myAgency());
     }
 
+    // ---------- bouncer invites (doc id = the secret invite code) ----------
+    match /personnelInvites/{code} {
+      // Anyone signed in may look up a code they were given, but never list codes.
+      allow get: if signedIn();
+      allow list: if isAdmin() || (isAgency() && resource.data.agencyId == myAgency());
+      allow create: if memberOf(request.resource.data.agencyId)
+        && get(personnelPath(request.resource.data.personnelId)).data.agencyId == request.resource.data.agencyId
+        && request.resource.data.usedBy == null;
+      // A bouncer redeems it once; the agency may revoke/edit its own.
+      allow update: if (isBouncer() && resource.data.usedBy == null
+            && changed().hasOnly(['usedBy', 'usedAt'])
+            && request.resource.data.usedBy == uid())
+        || memberOf(resource.data.agencyId);
+      allow delete: if isAdmin() || memberOf(resource.data.agencyId);
+    }
+
+    // ---------- independent bouncer asks to join an agency (doc id = personnelId) ----------
+    match /joinRequests/{personnelId} {
+      allow read: if isAdmin()
+        || (isAgency() && resource.data.agencyId == myAgency())
+        || (signedIn() && resource.data.userId == uid());
+      allow create, update: if (isBouncer() && personnelId == myPersonnel()
+            && request.resource.data.userId == uid()
+            && request.resource.data.personnelId == personnelId
+            && request.resource.data.status == 'pending'
+            && get(personnelPath(personnelId)).data.agencyId == ''
+            && get(/databases/$(database)/documents/agencies/$(request.resource.data.agencyId)).data.status == 'approved')
+        // The agency answers a request addressed to it.
+        || (isOwner() && resource.data.agencyId == myAgency()
+            && changed().hasOnly(['status', 'respondedAt'])
+            && request.resource.data.status in ['accepted', 'rejected']);
+      allow delete: if isAdmin() || (signedIn() && resource.data.userId == uid());
+    }
+
     // ---------- agencies ----------
     match /agencies/{agencyId} {
       allow read: if signedIn()
@@ -73,11 +129,12 @@ service cloud.firestore {
         && request.resource.data.ratingTotal == 0;
       allow update: if isAdmin()
         // Agency edits its own profile but not moderation / rating fields;
-        // it may move itself from draft/rejected to pending (submit for review).
+        // it may move itself from draft/rejected/needs_correction to pending (submit for review).
         || (memberOf(agencyId)
-            && !changed().hasAny(['verified', 'rating', 'reviewCount', 'ratingTotal', 'lastReviewId', 'adminRemarks', 'createdAt'])
+            && !changed().hasAny(['verified', 'rating', 'reviewCount', 'ratingTotal', 'lastReviewId', 'adminRemarks',
+                                  'createdAt', 'reviewedBy', 'reviewedAt'])
             && (request.resource.data.status == resource.data.status
-                || (resource.data.status in ['draft', 'rejected'] && request.resource.data.status == 'pending')))
+                || (resource.data.status in ['draft', 'rejected', 'needs_correction'] && request.resource.data.status == 'pending')))
         // Atomic rating increment written together with a review of a completed booking.
         || (signedIn() && !memberOf(agencyId)
             && changed().hasOnly(['rating', 'reviewCount', 'ratingTotal', 'lastReviewId'])
@@ -100,34 +157,78 @@ service cloud.firestore {
 
     // ---------- personnel (central registry) ----------
     match /personnel/{id} {
-      allow read: if isAdmin() || memberOf(oldAgency());
-      allow create: if memberOf(newAgency())
-        && request.resource.data.verificationStatus in ['draft', 'pending'];
-      // Agency cannot self-verify, suspend or clear admin remarks.
+      allow read: if isAdmin() || memberOf(oldAgency())
+        || (signedIn() && resource.data.get('userId', null) == uid());
+      allow create: if (memberOf(newAgency())
+          && request.resource.data.verificationStatus in ['draft', 'pending'])
+        // Independent bouncer registration: doc id == their uid, no agency yet.
+        || (isBouncer() && id == uid() && myPersonnel() == null
+          && request.resource.data.agencyId == ''
+          && request.resource.data.userId == uid()
+          && request.resource.data.verificationStatus in ['draft', 'pending']
+          && request.resource.data.active == true
+          && request.resource.data.removalRequested == false);
       allow update: if isAdmin()
+        // Agency cannot self-verify, suspend, clear admin remarks or re-link the account.
         || (memberOf(oldAgency()) && newAgency() == oldAgency()
-            && !changed().hasAny(['adminRemarks', 'createdAt'])
+            && !changed().hasAny(['adminRemarks', 'createdAt', 'userId', 'reviewedBy', 'reviewedAt'])
             && (request.resource.data.verificationStatus == resource.data.verificationStatus
-                || request.resource.data.verificationStatus == 'pending'));
+                || request.resource.data.verificationStatus == 'pending'))
+        // Agency takes in an independent bouncer whose join request was sent to it.
+        || (memberOf(newAgency()) && oldAgency() == ''
+            && get(/databases/$(database)/documents/joinRequests/$(id)).data.agencyId == newAgency()
+            && changed().hasOnly(['agencyId', 'code', 'employmentType', 'dailyWage', 'updatedAt']))
+        // Bouncer redeems an invite: links this record to their account.
+        || (isBouncer() && myPersonnel() == null && resource.data.get('userId', null) == null
+            && changed().hasOnly(['userId', 'updatedAt'])
+            && request.resource.data.userId == uid()
+            && getAfter(invitePath(resource.data.get('inviteCode', '-'))).data.usedBy == uid()
+            && get(invitePath(resource.data.get('inviteCode', '-'))).data.personnelId == id)
+        // Bouncer edits their own profile / availability and submits it for review.
+        || (isBouncer() && resource.data.get('userId', null) == uid()
+            && !changed().hasAny(['agencyId', 'userId', 'code', 'adminRemarks', 'active', 'removalRequested',
+                                  'dailyWage', 'employmentType', 'createdAt', 'inviteCode', 'source',
+                                  'reviewedBy', 'reviewedAt'])
+            && request.resource.data.availability in ['available', 'assigned', 'on_leave', 'unavailable']
+            && (request.resource.data.verificationStatus == resource.data.verificationStatus
+                || (resource.data.verificationStatus in ['draft', 'rejected', 'needs_correction', 'expired']
+                    && request.resource.data.verificationStatus == 'pending'))
+            // Once verified, identity fields are frozen; only work preferences change.
+            && (resource.data.verificationStatus != 'verified'
+                || changed().hasOnly(['availability', 'leaveUntil', 'workDays', 'shifts', 'preferredAreas',
+                                      'skills', 'languages', 'updatedAt'])));
       allow delete: if isAdmin()
         || (memberOf(oldAgency()) && resource.data.verificationStatus == 'draft');
     }
 
     // ---------- documents ----------
     match /documents/{id} {
-      allow read: if isAdmin() || memberOf(oldAgency());
-      allow create: if memberOf(newAgency()) && request.resource.data.status == 'pending';
+      function ownDoc(data) {
+        return isBouncer() && data.ownerType == 'personnel' && data.personnelId == myPersonnel();
+      }
+      allow read: if isAdmin() || memberOf(oldAgency()) || (signedIn() && ownDoc(resource.data));
+      allow create: if (memberOf(newAgency()) && request.resource.data.status == 'pending')
+        || (ownDoc(request.resource.data) && request.resource.data.status == 'pending'
+            && request.resource.data.agencyId == get(personnelPath(myPersonnel())).data.agencyId);
       allow update: if isAdmin()
         || (memberOf(oldAgency()) && newAgency() == oldAgency()
-            && !changed().hasAny(['remarks'])
-            && request.resource.data.status in [resource.data.status, 'pending']);
-      allow delete: if isAdmin() || (memberOf(oldAgency()) && resource.data.status != 'verified');
+            && !changed().hasAny(['remarks', 'reviewedBy', 'reviewedAt'])
+            && request.resource.data.status in [resource.data.status, 'pending'])
+        // Bouncer replaces a file (back to pending) or re-syncs agencyId after joining an agency.
+        || (ownDoc(resource.data) && ownDoc(request.resource.data) && resource.data.status != 'verified'
+            && changed().hasOnly(['fileUrl', 'name', 'type', 'expiresAt', 'status', 'uploadedAt', 'agencyId'])
+            && request.resource.data.status == 'pending'
+            && request.resource.data.agencyId == get(personnelPath(myPersonnel())).data.agencyId);
+      allow delete: if isAdmin()
+        || (memberOf(oldAgency()) && resource.data.status != 'verified')
+        || (ownDoc(resource.data) && resource.data.status != 'verified');
     }
 
     // ---------- bookings ----------
     match /bookings/{bookingId} {
       allow read: if isAdmin() || memberOf(oldAgency())
-        || (signedIn() && resource.data.customerId == uid());
+        || (signedIn() && resource.data.customerId == uid())
+        || (isBouncer() && myPersonnel() in resource.data.get('assignedIds', []));
 
       allow create: if signedIn()
         && request.resource.data.customerId == uid()
@@ -137,31 +238,70 @@ service cloud.firestore {
         && request.resource.data.assignedIds.size() == 0;
 
       allow update: if isAdmin()
-        // Customer: cancel, review the assigned team, ask to reschedule, mark reviewed.
+        // Customer: cancel, give feedback on the team, ask to reschedule, mark reviewed.
         || (signedIn() && resource.data.customerId == uid()
             && changed().hasOnly(['status', 'clientApproval', 'clientFeedback', 'rescheduleRequest', 'cancelReason', 'reviewed', 'updatedAt'])
             && (request.resource.data.status == resource.data.status
                 || (request.resource.data.status == 'cancelled'
-                    && resource.data.status in ['pending', 'accepted', 'assigned'])
-                || (request.resource.data.status == 'ongoing' && resource.data.status == 'assigned'
-                    && request.resource.data.clientApproval == 'approved'))
+                    && resource.data.status in ['pending', 'accepted', 'assigned', 'confirmed']))
             && (request.resource.data.reviewed == resource.data.reviewed || resource.data.status == 'completed'))
         // Agency: everything operational, never the customer, price or payment fields.
         || (memberOf(oldAgency())
             && !changed().hasAny(['customerId', 'customerName', 'customerPhone', 'agencyId', 'hourlyRate',
-                                  'subtotal', 'platformFee', 'tax', 'totalAmount', 'paymentStatus', 'reviewed', 'createdAt']));
+                                  'subtotal', 'platformFee', 'tax', 'totalAmount', 'paymentStatus', 'reviewed', 'createdAt']))
+        // Assigned bouncer records their own accept/decline. The last acceptance confirms
+        // the booking; the first check-in starts it.
+        || (isBouncer() && myPersonnel() in resource.data.get('assignedIds', [])
+            && changed().hasOnly(['acceptedIds', 'declinedIds', 'status', 'updatedAt'])
+            && onlyToggled('acceptedIds', myPersonnel())
+            && onlyToggled('declinedIds', myPersonnel())
+            && (request.resource.data.status == resource.data.status
+                || (resource.data.status == 'assigned' && request.resource.data.status == 'confirmed'
+                    && request.resource.data.get('acceptedIds', []).toSet().hasAll(resource.data.get('assignedIds', [])))
+                || (resource.data.status == 'confirmed' && request.resource.data.status == 'ongoing')));
 
       allow delete: if isAdmin();
     }
 
-    // ---------- attendance ----------
-    match /attendance/{id} {
-      allow read: if isAdmin() || memberOf(oldAgency())
-        || (signedIn() && resource.data.customerId == uid());
-      allow create: if memberOf(newAgency());
+    // ---------- assignment offers (doc id = bookingId_personnelId) ----------
+    match /assignments/{id} {
+      function mine(data) { return isBouncer() && data.personnelId == myPersonnel(); }
+      allow read: if isAdmin() || memberOf(oldAgency()) || (signedIn() && mine(resource.data));
+      allow create: if isAdmin() || memberOf(newAgency());
+      allow delete: if isAdmin() || memberOf(oldAgency());
       allow update: if isAdmin()
         || (memberOf(oldAgency()) && newAgency() == oldAgency())
-        || (signedIn() && resource.data.customerId == uid() && changed().hasOnly(['clientConfirmed']));
+        || (mine(resource.data)
+            && changed().hasOnly(['status', 'declineReason', 'respondedAt', 'checkIn', 'checkOut', 'updatedAt'])
+            && (request.resource.data.status == resource.data.status
+                || (resource.data.status == 'offered' && request.resource.data.status == 'declined')
+                // Only a verified bouncer can take work.
+                || (resource.data.status == 'offered' && request.resource.data.status == 'accepted'
+                    && get(personnelPath(myPersonnel())).data.verificationStatus == 'verified'))
+            // Check-in / check-out only on an accepted assignment.
+            && (!changed().hasAny(['checkIn', 'checkOut']) || request.resource.data.status == 'accepted'));
+    }
+
+    // ---------- attendance ----------
+    match /attendance/{id} {
+      function myRecord(data) { return isBouncer() && data.personnelId == myPersonnel(); }
+      allow read: if isAdmin() || memberOf(oldAgency())
+        || (signedIn() && resource.data.customerId == uid())
+        || (signedIn() && myRecord(resource.data));
+      allow create: if memberOf(newAgency())
+        // Bouncer self check-in on a booking they are assigned to (doc id = bookingId_personnelId).
+        || (myRecord(request.resource.data)
+            && id == request.resource.data.bookingId + '_' + myPersonnel()
+            && myPersonnel() in get(bookingPath(request.resource.data.bookingId)).data.get('assignedIds', [])
+            && get(bookingPath(request.resource.data.bookingId)).data.agencyId == newAgency()
+            && get(bookingPath(request.resource.data.bookingId)).data.customerId == request.resource.data.customerId
+            && request.resource.data.status in ['present', 'late']
+            && request.resource.data.clientConfirmed == false);
+      allow update: if isAdmin()
+        || (memberOf(oldAgency()) && newAgency() == oldAgency())
+        || (signedIn() && resource.data.customerId == uid() && changed().hasOnly(['clientConfirmed']))
+        || (myRecord(resource.data) && resource.data.checkOut == null
+            && changed().hasOnly(['checkOut', 'checkOutLocation']));
       allow delete: if isAdmin() || memberOf(oldAgency());
     }
 
@@ -185,7 +325,9 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
     match /payroll/{id} {
-      allow read, delete: if isAdmin() || (memberOf(oldAgency()) && me().staffRole in ['owner', 'manager', 'finance', 'hr']);
+      allow read: if isAdmin() || (memberOf(oldAgency()) && me().staffRole in ['owner', 'manager', 'finance', 'hr'])
+        || (isBouncer() && resource.data.personnelId == myPersonnel());
+      allow delete: if isAdmin() || (memberOf(oldAgency()) && me().staffRole in ['owner', 'manager', 'finance', 'hr']);
       allow create: if memberOf(newAgency()) && me().staffRole in ['owner', 'manager', 'finance', 'hr'];
       allow update: if isAdmin() || (memberOf(oldAgency()) && newAgency() == oldAgency()
                                      && me().staffRole in ['owner', 'manager', 'finance', 'hr']);
@@ -224,15 +366,20 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ---------- tickets (complaints & support) ----------
+    // ---------- tickets (complaints, support & incidents) ----------
     match /tickets/{id} {
       allow read: if isAdmin() || memberOf(oldAgency())
-        || (signedIn() && resource.data.customerId == uid());
+        || (signedIn() && resource.data.customerId == uid())
+        || (signedIn() && resource.data.get('reporterId', null) == uid());
       allow create: if memberOf(newAgency())
-        || (signedIn() && request.resource.data.customerId == uid());
+        || (signedIn() && request.resource.data.customerId == uid())
+        // Bouncer reports an incident or asks for help (agencyId '' = goes straight to Haven admin).
+        || (isBouncer() && request.resource.data.reporterId == uid()
+            && request.resource.data.customerId == null
+            && request.resource.data.agencyId == get(personnelPath(myPersonnel())).data.agencyId);
       allow update: if isAdmin()
         || (memberOf(oldAgency()) && newAgency() == oldAgency())
-        || (signedIn() && resource.data.customerId == uid()
+        || (signedIn() && (resource.data.customerId == uid() || resource.data.get('reporterId', null) == uid())
             && changed().hasOnly(['messages', 'updatedAt']));
       allow delete: if isAdmin();
     }
@@ -240,7 +387,7 @@ service cloud.firestore {
     // ---------- activity log ----------
     match /activity/{id} {
       allow read: if isAdmin() || memberOf(oldAgency());
-      allow create: if memberOf(newAgency()) && request.resource.data.actorId == uid();
+      allow create: if (memberOf(newAgency()) || isAdmin()) && request.resource.data.actorId == uid();
       allow update, delete: if isAdmin();
     }
 

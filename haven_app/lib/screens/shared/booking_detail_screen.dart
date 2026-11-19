@@ -10,10 +10,18 @@ import '../../state/session.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/ui.dart';
+import '../customer/explore_screen.dart';
 import '../customer/support_screen.dart';
 import 'review_sheet.dart';
 
-const _steps = ['Requested', 'Accepted', 'Team', 'Ongoing', 'Done'];
+const _steps = [
+  'Requested',
+  'Accepted',
+  'Team',
+  'Confirmed',
+  'Ongoing',
+  'Done',
+];
 
 class BookingDetailScreen extends StatefulWidget {
   final String bookingId;
@@ -43,23 +51,6 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
       if (mounted) showMessage(context, AuthService.friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _approve(Booking b) async {
-    final ok = await confirmDialog(
-      context,
-      title: 'Approve this team?',
-      message:
-          'We\'ll let ${b.agencyName} know you\'re happy, and your booking moves to in progress.',
-      confirm: 'Approve team',
-      icon: Icons.verified_user_outlined,
-    );
-    if (ok) {
-      await _run(
-        () => DbService.instance.approveTeam(b),
-        'Team approved — you\'re all set.',
-      );
     }
   }
 
@@ -197,6 +188,7 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
             b.status == BookingStatus.declined;
         final showOps = const [
           BookingStatus.assigned,
+          BookingStatus.confirmed,
           BookingStatus.ongoing,
           BookingStatus.completed,
         ].contains(b.status);
@@ -250,6 +242,24 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                           : '${b.agencyName} couldn\'t take this booking. Other agencies may be free — have a look in Explore.',
                     ),
                   ),
+                if (b.status == BookingStatus.declined) ...[
+                  const SizedBox(height: 12),
+                  PrimaryButton(
+                    label: 'Find another agency',
+                    icon: Icons.search_rounded,
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => Scaffold(
+                          appBar: AppBar(
+                            title: const Text('Find another agency'),
+                          ),
+                          body: ExploreScreen(initialService: b.service),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 if (b.status == BookingStatus.cancelled)
                   anim(
                     SoftBanner(
@@ -296,25 +306,28 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                   const SectionTitle('Your team'),
                   const SizedBox(height: 8),
                   anim(_TeamCard(booking: b)),
-                  if (b.awaitingTeamApproval) ...[
+                  if (b.status == BookingStatus.assigned) ...[
+                    const SizedBox(height: 10),
+                    SoftBanner(
+                      icon: Icons.hourglass_top_rounded,
+                      text:
+                          '${b.confirmedCount} of ${b.teamSize} confirmed. Your booking is confirmed once every team member accepts.',
+                    ),
+                  ],
+                  if (b.status == BookingStatus.confirmed) ...[
+                    const SizedBox(height: 10),
+                    const SoftBanner(
+                      icon: Icons.verified_outlined,
+                      text: 'Your whole team has confirmed. You\'re all set.',
+                    ),
+                  ],
+                  if (b.canRequestTeamChanges &&
+                      b.clientApproval != ClientApproval.changesRequested) ...[
                     const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: SecondaryButton(
-                            label: 'Request changes',
-                            onPressed: () => _requestChanges(b),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: PrimaryButton(
-                            label: 'Approve team',
-                            loading: _busy,
-                            onPressed: () => _approve(b),
-                          ),
-                        ),
-                      ],
+                    SecondaryButton(
+                      label: 'Request changes to team',
+                      icon: Icons.sync_rounded,
+                      onPressed: () => _requestChanges(b),
                     ),
                   ],
                   if (b.clientApproval == ClientApproval.changesRequested) ...[
@@ -381,7 +394,11 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                         Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
-                            'Payment: ${b.paymentStatus}',
+                            b.paymentStatus == 'paid'
+                                ? 'Marked as paid.'
+                                : b.paymentStatus == 'refunded'
+                                ? 'Refunded.'
+                                : 'Nothing is charged in the app. Pay ${b.agencyName} directly as agreed with them.',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ),
@@ -570,7 +587,15 @@ class _AgreementCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
               ),
-              StatusChip(a.status),
+              Pill(
+                switch (a.status) {
+                  'sent' => 'Awaiting you',
+                  'accepted' => 'Accepted',
+                  'declined' => 'Declined',
+                  _ => a.status,
+                },
+                color: StatusChip.colorFor(a.status),
+              ),
             ],
           ),
           const SizedBox(height: 4),

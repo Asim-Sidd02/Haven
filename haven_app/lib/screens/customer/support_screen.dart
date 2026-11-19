@@ -139,7 +139,14 @@ class _TicketTile extends StatelessWidget {
 
 class TicketDetailScreen extends StatefulWidget {
   final String ticketId;
-  const TicketDetailScreen({super.key, required this.ticketId});
+
+  /// Who is replying: 'customer' in the client app, 'bouncer' for personnel.
+  final String by;
+  const TicketDetailScreen({
+    super.key,
+    required this.ticketId,
+    this.by = 'customer',
+  });
   @override
   State<TicketDetailScreen> createState() => _TicketDetailScreenState();
 }
@@ -166,6 +173,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         widget.ticketId,
         context.read<Session>().user!.name,
         text,
+        by: widget.by,
       );
       _reply.clear();
     } catch (e) {
@@ -221,7 +229,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                     for (var i = 0; i < t.messages.length; i++)
                       FadeSlideIn(
                         index: i,
-                        child: _Bubble(message: t.messages[i]),
+                        child: _Bubble(message: t.messages[i], me: widget.by),
                       ),
                   ],
                 ),
@@ -260,11 +268,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
 
 class _Bubble extends StatelessWidget {
   final TicketMessage message;
-  const _Bubble({required this.message});
+  final String me;
+  const _Bubble({required this.message, required this.me});
 
   @override
   Widget build(BuildContext context) {
-    final mine = message.by == 'customer';
+    final mine = message.by == me;
     final who = mine
         ? 'You'
         : message.by == 'admin'

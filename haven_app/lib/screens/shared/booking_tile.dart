@@ -17,7 +17,7 @@ class BookingTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = context.read<Session>();
     final b = booking;
-    final needsYou = b.awaitingTeamApproval || b.canReview;
+    final needsYou = b.canReview;
     return Pressable(
       child: Card(
         clipBehavior: Clip.antiAlias,
@@ -111,12 +111,20 @@ class BookingTile extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (b.status == BookingStatus.assigned) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '${b.confirmedCount} of ${b.teamSize} team members confirmed',
+                    style: const TextStyle(
+                      color: HavenColors.muted,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ],
                 if (needsYou) ...[
                   const SizedBox(height: 10),
                   Pill(
-                    b.canReview
-                        ? 'Share your review'
-                        : 'Your team is ready for approval',
+                    'Share your review',
                     icon: Icons.touch_app_outlined,
                     filled: true,
                   ),

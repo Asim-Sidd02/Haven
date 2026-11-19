@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/app_user.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -21,6 +22,7 @@ class _SignupScreenState extends State<SignupScreen> {
   final _password = TextEditingController();
   bool _busy = false;
   bool _obscure = true;
+  UserRole _role = UserRole.customer;
 
   @override
   void dispose() {
@@ -39,6 +41,7 @@ class _SignupScreenState extends State<SignupScreen> {
         email: _email.text,
         phone: _phone.text,
         password: _password.text,
+        role: _role,
       );
       if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
     } catch (e) {
@@ -61,6 +64,30 @@ class _SignupScreenState extends State<SignupScreen> {
               const PageTitle(
                 title: 'Join Haven',
                 subtitle: 'First, tell us how you\'ll be using Haven.',
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: _RoleCard(
+                      icon: Icons.shield_outlined,
+                      title: 'I need security',
+                      subtitle: 'Book trusted agencies',
+                      selected: _role == UserRole.customer,
+                      onTap: () => setState(() => _role = UserRole.customer),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _RoleCard(
+                      icon: Icons.badge_outlined,
+                      title: 'I provide security',
+                      subtitle: 'Find work as a bouncer',
+                      selected: _role == UserRole.bouncer,
+                      onTap: () => setState(() => _role = UserRole.bouncer),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 24),
               TextFormField(
@@ -172,6 +199,87 @@ class _SignupScreenState extends State<SignupScreen> {
                 ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RoleCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+  const _RoleCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Pressable(
+      child: AnimatedContainer(
+        duration: Motion.fast,
+        decoration: BoxDecoration(
+          color: selected ? HavenColors.sage : HavenColors.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: selected ? HavenColors.sage : HavenColors.border,
+          ),
+          boxShadow: HavenColors.softShadow,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        icon,
+                        color: selected ? Colors.white : HavenColors.sage,
+                      ),
+                      const Spacer(),
+                      Icon(
+                        selected
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                        size: 18,
+                        color: selected ? Colors.white : HavenColors.faint,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: selected ? Colors.white : HavenColors.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: selected
+                          ? Colors.white.withValues(alpha: 0.75)
+                          : HavenColors.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

@@ -139,20 +139,6 @@ class DbService {
     );
   }
 
-  Future<void> approveTeam(Booking b) async {
-    await _bookings.doc(b.id).update({
-      'clientApproval': ClientApproval.approved,
-      'status': BookingStatus.ongoing,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-    await _notifyAgency(
-      b,
-      'Team approved',
-      '${b.customerName} approved the assigned team.',
-      type: 'assignment',
-    );
-  }
-
   Future<void> requestTeamChanges(Booking b, String feedback) async {
     await _bookings.doc(b.id).update({
       'clientApproval': ClientApproval.changesRequested,
@@ -353,11 +339,15 @@ class DbService {
     await batch.commit();
   }
 
-  Future<void> replyToTicket(String id, String name, String text) =>
-      _tickets.doc(id).update({
+  Future<void> replyToTicket(
+    String id,
+    String name,
+    String text, {
+    String by = 'customer',
+  }) => _tickets.doc(id).update({
         'messages': FieldValue.arrayUnion([
           {
-            'by': 'customer',
+            'by': by,
             'name': name,
             'text': text.trim(),
             'at': Timestamp.now(),

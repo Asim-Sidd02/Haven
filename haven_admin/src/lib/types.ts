@@ -1,16 +1,16 @@
 import type { Timestamp } from "firebase/firestore";
 
-// v2 data model — see ../firebase/SCHEMA.md (source of truth).
+// v3 data model — see ../firebase/SCHEMA.md (source of truth).
 
-export type Role = "customer" | "agency" | "admin";
+export type Role = "customer" | "agency" | "admin" | "bouncer";
 export type StaffRole = "owner" | "manager" | "hr" | "bookings" | "finance";
-export type AgencyStatus = "draft" | "pending" | "approved" | "rejected" | "suspended";
-export type VerificationStatus = "draft" | "pending" | "verified" | "rejected" | "expired" | "suspended";
+export type AgencyStatus = "draft" | "pending" | "needs_correction" | "approved" | "rejected" | "suspended";
+export type VerificationStatus = "draft" | "pending" | "needs_correction" | "verified" | "rejected" | "expired" | "suspended";
 export type Availability = "available" | "assigned" | "on_leave" | "unavailable";
 export type EmploymentType = "full_time" | "part_time" | "contract";
-export type DocStatus = "pending" | "verified" | "rejected" | "expired";
+export type DocStatus = "pending" | "needs_correction" | "verified" | "rejected" | "expired";
 export type DocType = "identity" | "training" | "license" | "background" | "registration" | "other";
-export type BookingStatus = "pending" | "accepted" | "declined" | "assigned" | "ongoing" | "completed" | "cancelled";
+export type BookingStatus = "pending" | "accepted" | "declined" | "assigned" | "confirmed" | "ongoing" | "completed" | "cancelled";
 export type PaymentStatus = "unpaid" | "paid" | "refunded";
 export type ClientApproval = "none" | "pending" | "approved" | "changes_requested";
 export type TicketStatus = "open" | "in_progress" | "escalated" | "resolved";
@@ -39,6 +39,7 @@ export interface AppUser extends WithId {
   role: Role;
   agencyId?: string | null;
   staffRole?: StaffRole | null;
+  personnelId?: string | null;
   isActive: boolean;
   createdAt?: Timestamp;
 }
@@ -70,6 +71,9 @@ export interface Agency extends WithId {
   status: AgencyStatus;
   verified: boolean;
   adminRemarks: string;
+  joinCode?: string;
+  reviewedBy?: string;
+  reviewedAt?: Timestamp;
   rating: number;
   ratingTotal: number;
   reviewCount: number;
@@ -80,7 +84,18 @@ export interface Agency extends WithId {
 }
 
 export interface Personnel extends WithId {
+  /** '' for an independent bouncer not (yet) in an agency */
   agencyId: string;
+  userId?: string | null;
+  source?: "agency" | "independent";
+  address?: string;
+  workDays?: string[];
+  shifts?: string[];
+  preferredAreas?: string[];
+  consentAt?: Timestamp | null;
+  reviewedBy?: string;
+  reviewedAt?: Timestamp;
+  inviteCode?: string;
   code: string;
   name: string;
   phone: string;
@@ -115,6 +130,8 @@ export interface AgencyDocument extends WithId {
   expiresAt: string | null;
   status: DocStatus;
   remarks: string;
+  reviewedBy?: string;
+  reviewedAt?: Timestamp;
   uploadedAt?: Timestamp;
 }
 
@@ -149,6 +166,8 @@ export interface Booking extends WithId {
   status: BookingStatus;
   assigned: AssignedPerson[];
   assignedIds: string[];
+  acceptedIds?: string[];
+  declinedIds?: string[];
   clientApproval: ClientApproval;
   clientFeedback: string;
   agencyNote: string;
@@ -158,6 +177,46 @@ export interface Booking extends WithId {
   reviewed: boolean;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
+}
+
+export interface GeoPoint {
+  at?: Timestamp;
+  lat?: number;
+  lng?: number;
+  accuracy?: number;
+}
+
+export type AssignmentStatus = "offered" | "accepted" | "declined" | "withdrawn";
+
+export interface Assignment extends WithId {
+  bookingId: string;
+  agencyId: string;
+  agencyName?: string;
+  personnelId: string;
+  personnelName: string;
+  status: AssignmentStatus;
+  declineReason?: string;
+  respondBy?: Timestamp;
+  respondedAt?: Timestamp;
+  serviceLabel?: string;
+  eventType?: string;
+  eventDate?: Timestamp;
+  hours?: number;
+  location?: string;
+  customerName?: string;
+  checkIn?: GeoPoint | null;
+  checkOut?: GeoPoint | null;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+export interface ActivityEntry extends WithId {
+  agencyId: string;
+  actorId: string;
+  actorName: string;
+  action: string;
+  target: string;
+  createdAt?: Timestamp;
 }
 
 export interface Review extends WithId {
@@ -175,7 +234,7 @@ export interface Review extends WithId {
 }
 
 export interface TicketMessage {
-  by: "agency" | "customer" | "admin";
+  by: "agency" | "customer" | "admin" | "bouncer";
   name: string;
   text: string;
   at: Timestamp;
@@ -185,6 +244,8 @@ export interface Ticket extends WithId {
   agencyId: string;
   customerId: string | null;
   customerName: string;
+  reporterId?: string;
+  reporterName?: string;
   bookingId: string | null;
   subject: string;
   category: "complaint" | "support" | "incident";
@@ -221,12 +282,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   supportPhone: "",
 };
 
-export const ROLES: Role[] = ["customer", "agency", "admin"];
+export const ROLES: Role[] = ["customer", "agency", "bouncer", "admin"];
 export const STAFF_ROLES: StaffRole[] = ["owner", "manager", "hr", "bookings", "finance"];
-export const AGENCY_STATUSES: AgencyStatus[] = ["draft", "pending", "approved", "rejected", "suspended"];
-export const VERIFICATION_STATUSES: VerificationStatus[] = ["draft", "pending", "verified", "rejected", "expired", "suspended"];
-export const DOC_STATUSES: DocStatus[] = ["pending", "verified", "rejected", "expired"];
-export const BOOKING_STATUSES: BookingStatus[] = ["pending", "accepted", "declined", "assigned", "ongoing", "completed", "cancelled"];
+export const AGENCY_STATUSES: AgencyStatus[] = ["draft", "pending", "needs_correction", "approved", "rejected", "suspended"];
+export const VERIFICATION_STATUSES: VerificationStatus[] = ["draft", "pending", "needs_correction", "verified", "rejected", "expired", "suspended"];
+export const DOC_STATUSES: DocStatus[] = ["pending", "needs_correction", "verified", "rejected", "expired"];
+export const BOOKING_STATUSES: BookingStatus[] = ["pending", "accepted", "declined", "assigned", "confirmed", "ongoing", "completed", "cancelled"];
 export const PAYMENT_STATUSES: PaymentStatus[] = ["unpaid", "paid", "refunded"];
 export const TICKET_STATUSES: TicketStatus[] = ["open", "in_progress", "escalated", "resolved"];
 export const EVENT_TYPES = ["Wedding", "Club night", "Corporate event", "Concert", "Private party", "Residence", "Other"];

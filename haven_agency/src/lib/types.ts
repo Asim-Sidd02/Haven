@@ -10,7 +10,8 @@ export interface AppUser extends WithId {
   email: string;
   phone: string;
   photoUrl: string | null;
-  role: "customer" | "agency" | "admin";
+  role: "customer" | "agency" | "admin" | "bouncer";
+  personnelId?: string | null;
   agencyId: string | null;
   staffRole: StaffRole | null;
   isActive: boolean;
@@ -39,7 +40,7 @@ export interface Service {
   locations: string[];
 }
 
-export type AgencyStatus = "draft" | "pending" | "approved" | "rejected" | "suspended";
+export type AgencyStatus = "draft" | "pending" | "needs_correction" | "approved" | "rejected" | "suspended";
 
 export interface Agency extends WithId {
   name: string;
@@ -59,6 +60,9 @@ export interface Agency extends WithId {
   status: AgencyStatus;
   verified: boolean;
   adminRemarks?: string;
+  joinCode?: string;
+  reviewedBy?: string;
+  reviewedAt?: Timestamp;
   rating: number;
   ratingTotal: number;
   reviewCount: number;
@@ -75,11 +79,21 @@ export interface Payout {
   upi: string;
 }
 
-export type Verification = "draft" | "pending" | "verified" | "rejected" | "expired" | "suspended";
+export type Verification = "draft" | "pending" | "needs_correction" | "verified" | "rejected" | "expired" | "suspended";
 export type Availability = "available" | "assigned" | "on_leave" | "unavailable";
 
 export interface Personnel extends WithId {
   agencyId: string;
+  userId?: string | null;
+  source?: "agency" | "independent";
+  inviteCode?: string | null;
+  address?: string;
+  workDays?: string[];
+  shifts?: string[];
+  preferredAreas?: string[];
+  consentAt?: Timestamp | null;
+  reviewedBy?: string;
+  reviewedAt?: Timestamp;
   code: string;
   name: string;
   phone: string;
@@ -114,12 +128,12 @@ export interface AgencyDoc extends WithId {
   name: string;
   fileUrl: string;
   expiresAt: string | null;
-  status: "pending" | "verified" | "rejected" | "expired";
+  status: "pending" | "verified" | "rejected" | "needs_correction" | "expired";
   remarks: string;
   uploadedAt?: Timestamp;
 }
 
-export type BookingStatus = "pending" | "accepted" | "declined" | "assigned" | "ongoing" | "completed" | "cancelled";
+export type BookingStatus = "pending" | "accepted" | "declined" | "assigned" | "confirmed" | "ongoing" | "completed" | "cancelled";
 
 export interface AssignedPerson {
   personnelId: string;
@@ -152,6 +166,8 @@ export interface Booking extends WithId {
   status: BookingStatus;
   assigned: AssignedPerson[];
   assignedIds: string[];
+  acceptedIds?: string[];
+  declinedIds?: string[];
   clientApproval: "none" | "pending" | "approved" | "changes_requested";
   clientFeedback: string;
   agencyNote: string;
@@ -177,6 +193,66 @@ export interface Attendance extends WithId {
   overtimeHours: number;
   clientConfirmed: boolean;
   correction: { reason: string; status: "open" | "approved" | "rejected" } | null;
+  source?: "agency" | "app";
+  checkInLocation?: GeoPoint | null;
+  checkOutLocation?: GeoPoint | null;
+}
+
+export interface GeoPoint { lat: number; lng: number; accuracy?: number }
+export interface GeoStamp extends GeoPoint { at: Timestamp }
+
+export type AssignmentStatus = "offered" | "accepted" | "declined" | "withdrawn";
+
+export interface Assignment extends WithId {
+  bookingId: string;
+  agencyId: string;
+  agencyName: string;
+  agencyPhone: string;
+  personnelId: string;
+  personnelName: string;
+  status: AssignmentStatus;
+  declineReason?: string;
+  respondBy?: Timestamp;
+  respondedAt?: Timestamp | null;
+  serviceLabel: string;
+  eventType: string;
+  eventDate?: Timestamp;
+  hours: number;
+  location: string;
+  requirements: string;
+  agencyNote: string;
+  customerName: string;
+  checkIn: GeoStamp | null;
+  checkOut: GeoStamp | null;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+export interface PersonnelInvite extends WithId {
+  code: string;
+  personnelId: string;
+  agencyId: string;
+  agencyName: string;
+  name: string;
+  phone: string;
+  usedBy: string | null;
+  usedAt: Timestamp | null;
+  createdAt?: Timestamp;
+}
+
+export interface JoinRequest extends WithId {
+  personnelId: string;
+  userId: string;
+  agencyId: string;
+  agencyName: string;
+  name: string;
+  phone: string;
+  photoUrl: string | null;
+  experienceYears: number;
+  skills: string[];
+  status: "pending" | "accepted" | "rejected";
+  createdAt?: Timestamp;
+  respondedAt?: Timestamp | null;
 }
 
 export interface Agreement extends WithId {
@@ -250,12 +326,14 @@ export interface Review extends WithId {
   createdAt?: Timestamp;
 }
 
-export interface TicketMsg { by: "agency" | "customer" | "admin"; name: string; text: string; at: Timestamp }
+export interface TicketMsg { by: "agency" | "customer" | "admin" | "bouncer"; name: string; text: string; at: Timestamp }
 
 export interface Ticket extends WithId {
   agencyId: string;
   customerId: string | null;
   customerName: string;
+  reporterId?: string;
+  reporterName?: string;
   bookingId: string | null;
   subject: string;
   category: "complaint" | "support" | "incident";

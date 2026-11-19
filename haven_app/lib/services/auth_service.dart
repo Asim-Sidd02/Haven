@@ -22,6 +22,7 @@ class AuthService {
     required String email,
     required String phone,
     required String password,
+    UserRole role = UserRole.customer,
   }) async {
     final cred = await _auth.createUserWithEmailAndPassword(
       email: email.trim(),
@@ -35,8 +36,8 @@ class AuthService {
       name: name.trim(),
       email: email.trim(),
       phone: phone.trim(),
-      // The app is client-only; agencies sign up on the web dashboard.
-      role: UserRole.customer,
+      // Customers and bouncers sign up here; agencies use the web dashboard.
+      role: role == UserRole.bouncer ? UserRole.bouncer : UserRole.customer,
     );
     await _db.collection('users').doc(uid).set(user.toCreateMap());
   }

@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ExternalLink, FileText, X } from "lucide-react";
+import type { Timestamp } from "firebase/firestore";
+import { Check, ExternalLink, FileText, PencilLine, X } from "lucide-react";
 import { setDocumentStatus } from "@/lib/actions";
 import { errMsg, fmtDate } from "@/lib/format";
-import type { AgencyDocument, DocStatus } from "@/lib/types";
+import type { AgencyDocument, DocStatus, Personnel } from "@/lib/types";
 import { Badge, Button, Empty, Field, IconButton, Modal, Textarea } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 
@@ -54,25 +55,47 @@ export function RemarksDialog({
       }
     >
       {description && <p className="mb-4 text-sm text-muted">{description}</p>}
-      <Field label="Remarks" hint="Shown to the agency.">
+      <Field label="Reason" hint="Required. Shown to the agency and the bouncer.">
         <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} autoFocus />
       </Field>
     </Modal>
   );
 }
 
-/** List of documents with verify / reject controls. */
-export function DocumentList({ docs, emptyHint }: { docs: AgencyDocument[]; emptyHint: string }) {
+/** Who last reviewed a record, when, and why. */
+export function ReviewNote({ by, at, remarks }: { by?: string; at?: Timestamp | null; remarks?: string }) {
+  if (!by && !remarks) return null;
+  return (
+    <div className="mt-3 rounded-xl bg-cream px-3 py-2 text-xs text-ink">
+      {remarks && (
+        <p>
+          <span className="font-semibold">Reason:</span> {remarks}
+        </p>
+      )}
+      {by && (
+        <p className={remarks ? "mt-1 text-muted" : "text-muted"}>
+          Reviewed by {by}
+          {at ? ` · ${fmtDate(at, true)}` : ""}
+        </p>
+      )}
+    </div>
+  );
+}
+
+type DocAction = "rejected" | "needs_correction";
+
+/** List of documents with verify / reject / request-correction controls. */
+export function DocumentList({ docs, emptyHint, person }: { docs: AgencyDocument[]; emptyHint: string; person?: Personnel | null }) {
   const toast = useToast();
-  const [rejecting, setRejecting] = useState<AgencyDocument | null>(null);
+  const [acting, setActing] = useState<{ d: AgencyDocument; status: DocAction } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   async function set(d: AgencyDocument, status: DocStatus, remarks: string) {
     setBusy(d.id);
     try {
-      await setDocumentStatus(d.id, status, remarks);
-      toast(`${d.name || "Document"} marked ${status}.`);
-      setRejecting(null);
+      await setDocumentStatus(d, status, remarks, person ?? null);
+      toast(`${d.name || "Document"} marked ${status.replace(/_/g, " ")}.`);
+      setActing(null);
     } catch (e) {
       toast(errMsg(e), "error");
     } finally {
@@ -82,10 +105,12 @@ export function DocumentList({ docs, emptyHint }: { docs: AgencyDocument[]; empt
 
   if (docs.length === 0) return <Empty compact icon={FileText} title="No documents" hint={emptyHint} />;
 
+  const sorted = [...docs].sort((a, b) => (b.uploadedAt?.toMillis() ?? 0) - (a.uploadedAt?.toMillis() ?? 0));
+
   return (
     <>
       <ul className="divide-y divide-line rounded-xl border border-line">
-        {docs.map((d) => (
+        {sorted.map((d) => (
           <li key={d.id} className="flex items-start gap-3 p-3">
             <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
             <div className="min-w-0 flex-1">
@@ -96,6 +121,12 @@ export function DocumentList({ docs, emptyHint }: { docs: AgencyDocument[]; empt
                 {d.expiresAt ? ` · expires ${d.expiresAt}` : ""} · {fmtDate(d.uploadedAt)}
               </p>
               {d.remarks && <p className="mt-1 text-xs text-rose">{d.remarks}</p>}
+              {d.reviewedBy && (
+                <p className="mt-0.5 text-[11px] text-muted">
+                  Reviewed by {d.reviewedBy}
+                  {d.reviewedAt ? ` · ${fmtDate(d.reviewedAt, true)}` : ""}
+                </p>
+              )}
               <div className="mt-1.5">
                 <Badge value={d.status} />
               </div>
@@ -109,7 +140,10 @@ export function DocumentList({ docs, emptyHint }: { docs: AgencyDocument[]; empt
               <IconButton label="Mark verified" disabled={busy === d.id || d.status === "verified"} onClick={() => set(d, "verified", "")}>
                 <Check className="h-4 w-4" />
               </IconButton>
-              <IconButton label="Reject document" tone="danger" disabled={busy === d.id} onClick={() => setRejecting(d)}>
+              <IconButton label="Request correction" disabled={busy === d.id || d.status === "needs_correction"} onClick={() => setActing({ d, status: "needs_correction" })}>
+                <PencilLine className="h-4 w-4" />
+              </IconButton>
+              <IconButton label="Reject document" tone="danger" disabled={busy === d.id || d.status === "rejected"} onClick={() => setActing({ d, status: "rejected" })}>
                 <X className="h-4 w-4" />
               </IconButton>
             </div>
@@ -117,13 +151,14 @@ export function DocumentList({ docs, emptyHint }: { docs: AgencyDocument[]; empt
         ))}
       </ul>
       <RemarksDialog
-        open={!!rejecting}
-        title="Reject document"
-        description={rejecting?.name}
-        initial={rejecting?.remarks ?? ""}
-        loading={!!rejecting && busy === rejecting.id}
-        onClose={() => setRejecting(null)}
-        onConfirm={(r) => rejecting && set(rejecting, "rejected", r)}
+        open={!!acting}
+        title={acting?.status === "needs_correction" ? "Request document correction" : "Reject document"}
+        confirmLabel={acting?.status === "needs_correction" ? "Request correction" : "Reject"}
+        description={acting?.d.name}
+        initial={acting?.d.remarks ?? ""}
+        loading={!!acting && busy === acting.d.id}
+        onClose={() => setActing(null)}
+        onConfirm={(r) => acting && set(acting.d, acting.status, r)}
       />
     </>
   );

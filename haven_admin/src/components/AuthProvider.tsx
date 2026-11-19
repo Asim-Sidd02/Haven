@@ -5,6 +5,7 @@ import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db, firebaseConfigured } from "@/lib/firebase";
 import type { AppUser } from "@/lib/types";
+import { setActorName } from "@/lib/actions";
 
 type AuthState =
   | { status: "loading" }
@@ -49,6 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setState({ status: "signedOut", reason: "This admin account has been deactivated." });
           return;
         }
+        setActorName(profile.name || profile.email || user.uid);
         setState({ status: "admin", user, profile });
       } catch (e) {
         await signOut(auth());

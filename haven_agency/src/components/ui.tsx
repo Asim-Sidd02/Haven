@@ -169,11 +169,13 @@ export function Badge({ tone = "muted", children, dot, className }: { tone?: Ton
 /** Every status in the product mapped to a label + tone so they read consistently everywhere. */
 const STATUS: Record<string, [string, Tone]> = {
   // booking
-  pending: ["Pending", "outline"], accepted: ["Accepted", "dark"], declined: ["Declined", "muted"], assigned: ["Team assigned", "dark"],
+  pending: ["Pending", "outline"], accepted: ["Accepted", "dark"], declined: ["Declined", "muted"], assigned: ["Awaiting bouncers", "outline"], confirmed: ["Confirmed", "dark"],
   ongoing: ["Ongoing", "solid"], completed: ["Completed", "muted"], cancelled: ["Cancelled", "dashed"],
   // verification
   draft: ["Draft", "dashed"], verified: ["Verified", "solid"], rejected: ["Rejected", "danger"], expired: ["Expired", "danger"], suspended: ["Suspended", "danger"],
-  approved: ["Approved", "solid"],
+  approved: ["Approved", "solid"], needs_correction: ["Needs correction", "danger"],
+  // assignment offers
+  offered: ["Awaiting response", "outline"], withdrawn: ["Withdrawn", "dashed"],
   // availability
   available: ["Available", "solid"], on_leave: ["On leave", "muted"], unavailable: ["Unavailable", "dashed"],
   // attendance

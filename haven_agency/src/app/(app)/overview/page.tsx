@@ -55,7 +55,7 @@ export default function Overview() {
   }, [d]);
 
   const upcoming = useMemo(() => d.bookings
-    .filter((b) => ["accepted", "assigned", "ongoing"].includes(b.status) && (toDate(b.eventDate)?.getTime() ?? 0) > Date.now() - 12 * 3600000)
+    .filter((b) => ["accepted", "assigned", "confirmed", "ongoing"].includes(b.status) && (toDate(b.eventDate)?.getTime() ?? 0) > Date.now() - 12 * 3600000)
     .sort((a, b) => (toDate(a.eventDate)?.getTime() ?? 0) - (toDate(b.eventDate)?.getTime() ?? 0)).slice(0, 6), [d.bookings]);
 
   const hour = new Date().getHours();

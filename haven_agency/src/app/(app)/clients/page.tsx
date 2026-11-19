@@ -21,13 +21,13 @@ export default function ClientsPage() {
       const c = m.get(b.customerId) ?? { id: b.customerId, name: b.customerName, phone: "", bookings: [] };
       c.bookings.push(b);
       // Contact details only once the agency has accepted at least one of their bookings.
-      if (["accepted", "assigned", "ongoing", "completed"].includes(b.status) && b.customerPhone) c.phone = b.customerPhone;
+      if (["accepted", "assigned", "confirmed", "ongoing", "completed"].includes(b.status) && b.customerPhone) c.phone = b.customerPhone;
       m.set(b.customerId, c);
     });
     return [...m.values()].map((c) => ({
       ...c,
       spent: c.bookings.filter((b) => b.status === "completed").reduce((s, b) => s + agencyShare(b), 0),
-      active: c.bookings.filter((b) => ["accepted", "assigned", "ongoing"].includes(b.status)).length,
+      active: c.bookings.filter((b) => ["accepted", "assigned", "confirmed", "ongoing"].includes(b.status)).length,
       last: Math.max(...c.bookings.map((b) => toDate(b.eventDate)?.getTime() ?? 0)),
       rating: reviews.filter((r) => r.customerId === c.id).map((r) => r.rating),
       complaints: tickets.filter((t) => t.customerId === c.id && t.category !== "support").length,

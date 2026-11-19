@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowRight, Building2, CalendarCheck, Clock, Sparkles, Star, UserCheck, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowRight, Building2, CalendarCheck, ChevronRight, Clock, Sparkles, Star, UserCheck, Wallet } from "lucide-react";
 import { useCollection } from "@/hooks/useCollection";
 import { useSettings } from "@/hooks/useSettings";
 import { setAgencyStatus } from "@/lib/actions";
 import { errMsg, fmtDate, fmtMoney } from "@/lib/format";
-import { BOOKING_STATUSES, type Agency, type AppUser, type Booking, type BookingStatus, type Personnel, type Review } from "@/lib/types";
+import { BOOKING_STATUSES, type Agency, type AppUser, type Assignment, type Booking, type BookingStatus, type Personnel, type Review } from "@/lib/types";
 import { Avatar, Badge, Button, Card, CardHeader, Empty, ErrorNote, PageHeader, Skeleton } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { useAuth } from "@/components/AuthProvider";
@@ -16,6 +16,7 @@ const BAR: Record<BookingStatus, string> = {
   pending: "bg-amber",
   accepted: "bg-sage",
   assigned: "bg-slate/60",
+  confirmed: "bg-sage/60",
   ongoing: "bg-sand",
   completed: "bg-slate",
   declined: "bg-rose",
@@ -24,7 +25,8 @@ const BAR: Record<BookingStatus, string> = {
 const STATUS_LABEL: Record<BookingStatus, string> = {
   pending: "Awaiting agency",
   accepted: "Accepted",
-  assigned: "Team assigned",
+  assigned: "Awaiting bouncers",
+  confirmed: "Confirmed",
   ongoing: "Ongoing",
   completed: "Completed",
   declined: "Declined",
@@ -86,6 +88,7 @@ export default function DashboardPage() {
   const personnel = useCollection<Personnel>("personnel");
   const bookings = useCollection<Booking>("bookings");
   const reviews = useCollection<Review>("reviews");
+  const assignments = useCollection<Assignment>("assignments");
   const { settings } = useSettings();
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -107,6 +110,10 @@ export default function DashboardPage() {
       pending: agencies.data.filter((a) => a.status === "pending"),
       personnelPending: personnel.data.filter((p) => p.verificationStatus === "pending").length,
       removals: personnel.data.filter((p) => p.removalRequested).length,
+      personnelCorrection: personnel.data.filter((p) => p.verificationStatus === "needs_correction").length,
+      agenciesCorrection: agencies.data.filter((a) => a.status === "needs_correction").length,
+      independent: personnel.data.filter((p) => !p.agencyId).length,
+      awaitingBouncers: byStatus.assigned,
       byStatus,
       revenue,
       newThisWeek,
@@ -119,10 +126,29 @@ export default function DashboardPage() {
     [bookings.data],
   );
 
-  async function moderate(id: string, status: "approved" | "rejected") {
+  const missedCheckIns = useMemo(() => {
+    const closed = new Set(bookings.data.filter((b) => b.status === "completed" || b.status === "cancelled").map((b) => b.id));
+    const now = Date.now();
+    return assignments.data.filter((a) => {
+      const start = a.eventDate?.toMillis();
+      return a.status === "accepted" && !a.checkIn && !!start && now > start + 30 * 60_000 && !closed.has(a.bookingId);
+    }).length;
+  }, [assignments.data, bookings.data]);
+
+  const outstanding = [
+    { label: "Personnel pending verification", count: stats.personnelPending, href: "/personnel", urgent: false },
+    { label: "Personnel needing correction", count: stats.personnelCorrection, href: "/personnel", urgent: false },
+    { label: "Agencies needing correction", count: stats.agenciesCorrection, href: "/agencies", urgent: false },
+    { label: "Independent bouncers awaiting an agency", count: stats.independent, href: "/personnel", urgent: false },
+    { label: "Bookings awaiting bouncers", count: stats.awaitingBouncers, href: "/bookings", urgent: false },
+    { label: "Missed check-ins", count: missedCheckIns, href: "/bookings", urgent: true },
+  ];
+
+  async function moderate(a: Agency, status: "approved" | "rejected") {
+    const id = a.id;
     setBusy(id + status);
     try {
-      await setAgencyStatus(id, status, status === "rejected" ? "Your application was declined. Please review your profile and documents, then resubmit." : undefined);
+      await setAgencyStatus(a, status, status === "rejected" ? "Your application was declined. Please review your profile and documents, then resubmit." : undefined);
       toast(status === "approved" ? "Agency approved and now visible to customers." : "Application declined.");
     } catch (e) {
       toast(errMsg(e), "error");
@@ -141,7 +167,7 @@ export default function DashboardPage() {
         title={`${greeting()}${firstName ? `, ${firstName}` : ""}`}
         subtitle={new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }) + " · Here's how Haven is doing."}
       />
-      <ErrorNote error={users.error || agencies.error || personnel.error || bookings.error} />
+      <ErrorNote error={users.error || agencies.error || personnel.error || bookings.error || assignments.error} />
 
       {/* KPI tiles */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -175,6 +201,31 @@ export default function DashboardPage() {
           </>
         )}
       </div>
+
+      {/* Outstanding actions */}
+      <Card className="mt-6">
+        <CardHeader title="Outstanding actions" meta={loading || assignments.loading ? undefined : `${outstanding.reduce((n, o) => n + o.count, 0)} open`} />
+        {loading || assignments.loading ? (
+          <div className="space-y-2 px-5 pb-5">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-4 w-64" />
+            ))}
+          </div>
+        ) : (
+          <ul className="grid grid-cols-1 divide-y divide-line sm:grid-cols-2 sm:divide-y-0">
+            {outstanding.map((o) => (
+              <li key={o.label}>
+                <Link href={o.href} className="flex items-center gap-3 px-5 py-3 text-[13px] transition hover:bg-cream/60">
+                  {o.urgent && o.count > 0 ? <AlertTriangle className="h-4 w-4 text-rose" /> : <span className="h-4 w-4" />}
+                  <span className="flex-1 text-ink">{o.label}</span>
+                  <span className={`font-semibold tabular-nums ${o.count ? (o.urgent ? "text-rose" : "text-ink") : "text-muted"}`}>{o.count}</span>
+                  <ChevronRight className="h-4 w-4 text-muted" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-5">
         {/* Bookings by status */}
@@ -260,10 +311,10 @@ export default function DashboardPage() {
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="secondary" loading={busy === b.id + "rejected"} onClick={() => moderate(b.id, "rejected")}>
+                    <Button size="sm" variant="secondary" loading={busy === b.id + "rejected"} onClick={() => moderate(b, "rejected")}>
                       Decline
                     </Button>
-                    <Button size="sm" loading={busy === b.id + "approved"} onClick={() => moderate(b.id, "approved")}>
+                    <Button size="sm" loading={busy === b.id + "approved"} onClick={() => moderate(b, "approved")}>
                       Approve
                     </Button>
                   </div>

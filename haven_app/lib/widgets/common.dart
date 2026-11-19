@@ -176,6 +176,7 @@ class StatusChip extends StatelessWidget {
     BookingStatus.pending || 'open' || 'sent' => HavenColors.pending,
     BookingStatus.accepted ||
     BookingStatus.assigned ||
+    BookingStatus.confirmed ||
     BookingStatus.ongoing ||
     'approved' ||
     'in_progress' => HavenColors.accepted,
@@ -184,18 +185,19 @@ class StatusChip extends StatelessWidget {
   };
 
   static String labelFor(String s) => switch (s) {
-    BookingStatus.pending => 'Awaiting agency',
-    BookingStatus.accepted => 'Accepted',
-    BookingStatus.assigned => 'Team assigned',
-    BookingStatus.ongoing => 'In progress',
+    BookingStatus.pending ||
+    BookingStatus.accepted ||
+    BookingStatus.assigned ||
+    BookingStatus.confirmed ||
+    BookingStatus.ongoing ||
+    BookingStatus.declined ||
+    BookingStatus.completed ||
+    BookingStatus.cancelled => BookingStatus.label(s),
     'open' => 'Open',
     'in_progress' => 'In progress',
     'escalated' => 'Escalated',
     'resolved' => 'Resolved',
     'sent' => 'Awaiting you',
-    BookingStatus.declined => 'Declined',
-    BookingStatus.completed => 'Completed',
-    BookingStatus.cancelled => 'Cancelled',
     'approved' => 'Approved',
     'rejected' => 'Not approved',
     'suspended' => 'Suspended',

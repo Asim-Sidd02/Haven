@@ -316,7 +316,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'You won\'t be charged now. The agency confirms first, then assigns its team for you to approve.',
+              'Nothing is charged in the app — you pay the agency directly. Your booking is confirmed only once the agency accepts and every assigned team member confirms.',
               style: TextStyle(color: HavenColors.muted, fontSize: 12.5),
             ),
             const SizedBox(height: 20),

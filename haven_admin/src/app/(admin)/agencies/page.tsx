@@ -31,12 +31,13 @@ import {
   Tr,
   Verified,
 } from "@/components/ui";
-import { DocumentList, RemarksDialog } from "@/components/Verification";
+import { DocumentList, RemarksDialog, ReviewNote } from "@/components/Verification";
 import { useToast } from "@/components/Toast";
 
 const STATUS_HELP: Record<AgencyStatus, string> = {
   draft: "The agency has not submitted its profile yet.",
   pending: "Submitted for review; hidden from customers.",
+  needs_correction: "Hidden; the agency was asked to correct something and resubmit.",
   approved: "Visible to customers and able to take bookings.",
   rejected: "Hidden; the agency sees your remarks and can resubmit.",
   suspended: "Hidden; the agency is asked to contact support.",
@@ -59,7 +60,7 @@ export default function AgenciesPage() {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<AgencyStatus | "all">("all");
   const [openId, setOpenId] = useState<string | null>(null);
-  const [rejecting, setRejecting] = useState<{ agency: Agency; status: "rejected" | "suspended" } | null>(null);
+  const [rejecting, setRejecting] = useState<{ agency: Agency; status: "rejected" | "suspended" | "needs_correction" } | null>(null);
   const [deleting, setDeleting] = useState<Agency | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -87,8 +88,8 @@ export default function AgenciesPage() {
   async function moderate(a: Agency, status: AgencyStatus, remarks?: string) {
     setBusy(a.id + status);
     try {
-      await setAgencyStatus(a.id, status, remarks);
-      toast(`${a.name || "Agency"} is now ${status}.`);
+      await setAgencyStatus(a, status, remarks);
+      toast(`${a.name || "Agency"} is now ${status.replace(/_/g, " ")}.`);
       setRejecting(null);
     } catch (e) {
       toast(errMsg(e), "error");
@@ -224,6 +225,9 @@ export default function AgenciesPage() {
                 <Button size="sm" disabled={selected.status === "approved"} loading={busy === selected.id + "approved"} onClick={() => moderate(selected, "approved")}>
                   Approve
                 </Button>
+                <Button size="sm" variant="secondary" disabled={selected.status === "needs_correction"} onClick={() => setRejecting({ agency: selected, status: "needs_correction" })}>
+                  Request correction
+                </Button>
                 <Button size="sm" variant="secondary" disabled={selected.status === "rejected"} onClick={() => setRejecting({ agency: selected, status: "rejected" })}>
                   Reject
                 </Button>
@@ -231,11 +235,7 @@ export default function AgenciesPage() {
                   Suspend
                 </Button>
               </div>
-              {selected.adminRemarks && (
-                <p className="mt-3 rounded-xl bg-cream px-3 py-2 text-xs text-ink">
-                  <span className="font-semibold">Remarks:</span> {selected.adminRemarks}
-                </p>
-              )}
+              <ReviewNote by={selected.reviewedBy} at={selected.reviewedAt} remarks={selected.adminRemarks} />
               <div className="mt-4 rounded-xl border border-line p-4">
                 <Toggle checked={!!selected.verified} onChange={(v) => toggleVerified(selected, v)} label="Verified badge" description="Shown next to the agency name in the client app." />
               </div>
@@ -253,6 +253,7 @@ export default function AgenciesPage() {
                 <Info label="Experience" value={`${selected.yearsExperience ?? 0} yrs`} />
                 <Info label="Working hours" value={selected.workingHours} />
                 <Info label="Personnel" value={String(selected.personnelCount ?? 0)} />
+                <Info label="Join code" value={selected.joinCode ? <span className="font-mono tracking-wider">{selected.joinCode}</span> : ""} />
                 <Info label="Areas" value={(selected.areas ?? []).join(", ")} />
                 <div className="col-span-2">
                   <Info label="Address" value={selected.address} />
@@ -293,8 +294,8 @@ export default function AgenciesPage() {
 
       <RemarksDialog
         open={!!rejecting}
-        title={rejecting?.status === "suspended" ? "Suspend agency" : "Reject agency"}
-        confirmLabel={rejecting?.status === "suspended" ? "Suspend" : "Reject"}
+        title={rejecting?.status === "suspended" ? "Suspend agency" : rejecting?.status === "needs_correction" ? "Request correction" : "Reject agency"}
+        confirmLabel={rejecting?.status === "suspended" ? "Suspend" : rejecting?.status === "needs_correction" ? "Request correction" : "Reject"}
         description={rejecting && <>Tell <strong className="text-ink">{rejecting.agency.name}</strong> why. They&apos;ll get a notification.</>}
         initial={rejecting?.agency.adminRemarks ?? ""}
         loading={!!rejecting && busy === rejecting.agency.id + rejecting.status}

@@ -2,12 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { Timestamp } from "firebase/firestore";
-import { Pencil, Trash2 } from "lucide-react";
+import { MapPin, Pencil, Trash2 } from "lucide-react";
 import { useCollection } from "@/hooks/useCollection";
 import { useSettings } from "@/hooks/useSettings";
 import { deleteBooking, updateBooking } from "@/lib/actions";
 import { errMsg, fmtDate, fmtMoney, matches, toLocalInput } from "@/lib/format";
-import { BOOKING_STATUSES, EVENT_TYPES, PAYMENT_STATUSES, type Booking, type BookingStatus, type PaymentStatus } from "@/lib/types";
+import { BOOKING_STATUSES, EVENT_TYPES, PAYMENT_STATUSES, type Assignment, type Booking, type BookingStatus, type GeoPoint, type PaymentStatus } from "@/lib/types";
 import {
   Avatar,
   Badge,
@@ -27,6 +27,7 @@ import {
   Table,
   Td,
   Textarea,
+  statusLabel,
 } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 
@@ -68,9 +69,47 @@ function toForm(b: Booking): Form {
   };
 }
 
+function AcceptProgress({ b }: { b: Booking }) {
+  const total = b.assignedIds?.length ?? 0;
+  const accepted = b.acceptedIds?.length ?? 0;
+  const declined = b.declinedIds?.length ?? 0;
+  return (
+    <span className="ml-1 text-xs normal-case tracking-normal">
+      <span className={accepted >= total ? "text-sage-dark" : "text-amber"}>
+        {accepted}/{total} accepted
+      </span>
+      {declined > 0 && <span className="text-rose"> · {declined} declined</span>}
+    </span>
+  );
+}
+
+function GeoLink({ g }: { g?: GeoPoint | null }) {
+  if (!g) return <span>—</span>;
+  const when = fmtDate(g.at, true);
+  if (typeof g.lat !== "number" || typeof g.lng !== "number") return <span>{when}</span>;
+  return (
+    <a
+      href={`https://www.google.com/maps?q=${g.lat},${g.lng}`}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-0.5 text-sage-dark hover:underline"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <MapPin className="h-3 w-3" />
+      {when}
+    </a>
+  );
+}
+
+function isMissedCheckIn(a: Assignment, b: Booking) {
+  const start = (a.eventDate ?? b.eventDate)?.toMillis();
+  return !a.checkIn && !!start && Date.now() > start + 30 * 60 * 1000;
+}
+
 export default function BookingsPage() {
   const toast = useToast();
   const { data, loading, error } = useCollection<Booking>("bookings");
+  const assignments = useCollection<Assignment>("assignments");
   const { settings } = useSettings();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<BookingStatus | "all">("all");
@@ -93,6 +132,16 @@ export default function BookingsPage() {
         .filter((b) => matches(q, b.customerName, b.agencyName, b.serviceLabel, b.location, b.eventType, b.id))
         .sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0)),
     [data, filter, q],
+  );
+
+  const editingAssignments = useMemo(
+    () =>
+      editing
+        ? assignments.data
+            .filter((a) => a.bookingId === editing.id)
+            .sort((a, b) => (a.personnelName ?? "").localeCompare(b.personnelName ?? ""))
+        : [],
+    [assignments.data, editing],
   );
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => (f ? { ...f, [k]: v } : f));
@@ -160,7 +209,7 @@ export default function BookingsPage() {
   return (
     <>
       <PageHeader title="Bookings" subtitle="Every request between customers and agencies, in one calm place." />
-      <ErrorNote error={error} />
+      <ErrorNote error={error || assignments.error} />
       <Card>
         <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center lg:justify-between">
           <FilterPills value={filter} onChange={setFilter} options={BOOKING_STATUSES} counts={counts} />
@@ -196,6 +245,7 @@ export default function BookingsPage() {
                   <p className="text-xs">
                     {b.hours} hrs · {b.personnelCount ?? 1} staff · {b.assignedIds?.length ?? 0} assigned
                   </p>
+                  {(b.assignedIds?.length ?? 0) > 0 && <AcceptProgress b={b} />}
                 </Td>
                 <Td className="font-medium text-ink">
                   {fmtMoney(b.totalAmount, settings.currency)}
@@ -287,9 +337,36 @@ export default function BookingsPage() {
               {editing.cancelReason && <p className="mt-2 text-xs text-rose">Cancel reason: {editing.cancelReason}</p>}
             </div>
 
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-wide text-muted">
+                Bouncer responses {(editing.assignedIds?.length ?? 0) > 0 && <AcceptProgress b={editing} />}
+              </p>
+              {assignments.loading ? (
+                <p className="text-xs text-muted">Loading assignments…</p>
+              ) : editingAssignments.length === 0 ? (
+                <p className="text-xs text-muted">No assignment offers for this booking.</p>
+              ) : (
+                <ul className="divide-y divide-line rounded-xl border border-line">
+                  {editingAssignments.map((a) => (
+                    <li key={a.id} className="flex flex-wrap items-start justify-between gap-2 p-3 text-[13px]">
+                      <div className="min-w-0">
+                        <p className="font-medium text-ink">{a.personnelName || a.personnelId}</p>
+                        {a.status === "declined" && a.declineReason && <p className="text-xs text-rose">Declined: {a.declineReason}</p>}
+                        <p className="text-xs text-muted">
+                          Check-in: <GeoLink g={a.checkIn} /> · Check-out: <GeoLink g={a.checkOut} />
+                        </p>
+                        {a.status === "accepted" && isMissedCheckIn(a, editing) && <p className="text-xs font-medium text-rose">Missed check-in</p>}
+                      </div>
+                      <Badge value={a.status} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Status">
-                <Select value={form.status} onChange={(e) => set("status", e.target.value as BookingStatus)} options={BOOKING_STATUSES.map((s) => ({ value: s, label: s }))} />
+                <Select value={form.status} onChange={(e) => set("status", e.target.value as BookingStatus)} options={BOOKING_STATUSES.map((s) => ({ value: s, label: statusLabel(s) }))} />
               </Field>
               <Field label="Payment status">
                 <Select value={form.paymentStatus} onChange={(e) => set("paymentStatus", e.target.value as PaymentStatus)} options={PAYMENT_STATUSES.map((s) => ({ value: s, label: s }))} />

@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Haven records your location when you check in or out of a shift so your agency can confirm you were on site.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Haven uses your photo library so you can add a profile picture.</string>
 	<key>NSCameraUsageDescription</key>

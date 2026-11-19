@@ -9,15 +9,36 @@ class BookingStatus {
   static const accepted = 'accepted';
   static const declined = 'declined';
   static const assigned = 'assigned';
+  static const confirmed = 'confirmed';
   static const ongoing = 'ongoing';
   static const completed = 'completed';
   static const cancelled = 'cancelled';
 
   /// The happy path, in order.
-  static const flow = [pending, accepted, assigned, ongoing, completed];
+  static const flow = [
+    pending,
+    accepted,
+    assigned,
+    confirmed,
+    ongoing,
+    completed,
+  ];
 
   /// Statuses from which the client may still cancel.
-  static const cancellable = [pending, accepted, assigned];
+  static const cancellable = [pending, accepted, assigned, confirmed];
+
+  /// User-facing label for the client app.
+  static String label(String s) => switch (s) {
+    pending => 'Awaiting agency response',
+    accepted => 'Accepted – awaiting team',
+    assigned => 'Awaiting team confirmation',
+    confirmed => 'Confirmed',
+    ongoing => 'In progress',
+    completed => 'Completed',
+    cancelled => 'Cancelled',
+    declined => 'Declined by agency',
+    _ => s,
+  };
 }
 
 class ClientApproval {
@@ -115,6 +136,9 @@ class Booking {
   final double totalAmount;
   final String status;
   final List<AssignedPerson> assigned;
+  final List<String> assignedIds;
+  final List<String> acceptedIds;
+  final List<String> declinedIds;
   final String clientApproval;
   final String clientFeedback;
   final String agencyNote;
@@ -147,6 +171,9 @@ class Booking {
     required this.totalAmount,
     this.status = BookingStatus.pending,
     this.assigned = const [],
+    this.assignedIds = const [],
+    this.acceptedIds = const [],
+    this.declinedIds = const [],
     this.clientApproval = ClientApproval.none,
     this.clientFeedback = '',
     this.agencyNote = '',
@@ -163,9 +190,22 @@ class Booking {
     BookingStatus.declined,
   ].contains(status);
   bool get canCancel => BookingStatus.cancellable.contains(status);
-  bool get awaitingTeamApproval =>
-      status == BookingStatus.assigned &&
-      clientApproval == ClientApproval.pending;
+  /// The client may ask the agency to change the team while it is being
+  /// put together or confirmed (feedback only; never gates the flow).
+  bool get canRequestTeamChanges =>
+      status == BookingStatus.assigned || status == BookingStatus.confirmed;
+
+  /// How many of the assigned team have accepted their offer.
+  int get confirmedCount {
+    final ids = assignedIds.isNotEmpty
+        ? assignedIds
+        : assigned.map((a) => a.personnelId).toList();
+    return acceptedIds.where(ids.contains).length;
+  }
+
+  int get teamSize => assignedIds.isNotEmpty
+      ? assignedIds.length
+      : (assigned.isNotEmpty ? assigned.length : personnelCount);
   bool get canReview => status == BookingStatus.completed && !reviewed;
 
   factory Booking.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) =>
@@ -199,6 +239,9 @@ class Booking {
         for (final a in (d['assigned'] as List? ?? const []))
           if (a is Map) AssignedPerson.fromMap(Map<String, dynamic>.from(a)),
       ],
+      assignedIds: List<String>.from(d['assignedIds'] ?? const []),
+      acceptedIds: List<String>.from(d['acceptedIds'] ?? const []),
+      declinedIds: List<String>.from(d['declinedIds'] ?? const []),
       clientApproval: d['clientApproval'] ?? ClientApproval.none,
       clientFeedback: d['clientFeedback'] ?? '',
       agencyNote: d['agencyNote'] ?? '',
@@ -241,6 +284,8 @@ class Booking {
     'status': BookingStatus.pending,
     'assigned': <Map<String, dynamic>>[],
     'assignedIds': <String>[],
+    'acceptedIds': <String>[],
+    'declinedIds': <String>[],
     'clientApproval': ClientApproval.none,
     'clientFeedback': '',
     'agencyNote': '',

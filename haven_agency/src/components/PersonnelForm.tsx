@@ -54,7 +54,7 @@ export function PersonnelForm({ open, onClose, editing }: { open: boolean; onClo
     const ok = editing
       ? await run(() => patch("personnel", editing.id, { ...data, ...(submit ? { verificationStatus: "pending" } : {}) }), "Changes saved", ["Updated personnel", data.name])
       : await run(() => create("personnel", {
-          ...data, agencyId: agency.id, code: nextCode(personnel), verificationStatus: submit ? "pending" : "draft", adminRemarks: "",
+          ...data, agencyId: agency.id, code: nextCode(personnel), verificationStatus: submit ? "pending" : "draft", adminRemarks: "", userId: null, source: "agency", inviteCode: null,
           availability: "available", leaveUntil: null, active: true, removalRequested: false,
         }).then(() => patch("agencies", agency.id, { personnelCount: personnel.length + 1 })), submit ? `${data.name} added and sent for verification` : `${data.name} saved as draft`, ["Added personnel", data.name]);
     setBusy(false);
@@ -72,8 +72,8 @@ export function PersonnelForm({ open, onClose, editing }: { open: boolean; onClo
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         {(!editing || editing.verificationStatus === "draft") && <Button loading={busy} onClick={() => save(false)}>Save as draft</Button>}
-        <Button variant="primary" loading={busy} onClick={() => save(!editing || ["draft", "rejected", "expired"].includes(editing.verificationStatus))}>
-          {editing && !["draft", "rejected", "expired"].includes(editing.verificationStatus) ? "Save changes" : "Save & submit for verification"}
+        <Button variant="primary" loading={busy} onClick={() => save(!editing || ["draft", "rejected", "needs_correction", "expired"].includes(editing.verificationStatus))}>
+          {editing && !["draft", "rejected", "needs_correction", "expired"].includes(editing.verificationStatus) ? "Save changes" : "Save & submit for verification"}
         </Button>
       </>}>
       <div className="mb-6 flex items-center gap-4">

@@ -2,7 +2,7 @@ import {
   addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, writeBatch, Timestamp,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { AssignedPerson, Booking, Personnel } from "./types";
+import type { AssignedPerson, Assignment, Attendance, Booking, Personnel } from "./types";
 
 export interface Actor { uid: string; name: string; agencyId: string }
 
@@ -76,6 +76,37 @@ export function nextCode(existing: Personnel[], offset = 0) {
   return `HV-${String(max + 1 + offset).padStart(4, "0")}`;
 }
 
+/** Random code from an alphabet without look-alike characters (no 0/O, 1/I/L). */
+export function randomCode(len: number) {
+  const A = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  const buf = new Uint32Array(len);
+  crypto.getRandomValues(buf);
+  return Array.from(buf, (n) => A[n % A.length]).join("");
+}
+
+/** Deadline for a bouncer to answer an offer: the earlier of 24h from now and 2h before the event. */
+export function respondByFor(b: Booking): Timestamp {
+  const day = Date.now() + 24 * 3600000;
+  const ev = b.eventDate?.toMillis?.();
+  const t = ev ? Math.min(day, ev - 2 * 3600000) : day;
+  return Timestamp.fromMillis(Math.max(t, Date.now()));
+}
+
+export const assignmentId = (bookingId: string, personnelId: string) => `${bookingId}_${personnelId}`;
+
+/** Accepted assignments on confirmed/ongoing bookings whose start + 30 min passed with no check-in. */
+export function missedCheckIns(assignments: Assignment[], bookings: Booking[], attendance: Attendance[]): Assignment[] {
+  const live = new Map(bookings.filter((b) => b.status === "confirmed" || b.status === "ongoing").map((b) => [b.id, b]));
+  const nowMs = Date.now();
+  return assignments.filter((a) => {
+    const b = live.get(a.bookingId);
+    if (a.status !== "accepted" || a.checkIn || !b) return false;
+    const start = b.eventDate?.toMillis?.() ?? a.eventDate?.toMillis?.();
+    if (!start || start + 30 * 60000 > nowMs) return false;
+    return !attendance.some((r) => r.bookingId === a.bookingId && r.personnelId === a.personnelId && r.checkIn);
+  });
+}
+
 /* ---------- scheduling ---------- */
 
 const span = (b: Booking): [number, number] | null => {
@@ -85,7 +116,7 @@ const span = (b: Booking): [number, number] | null => {
 };
 
 /** Bookings still occupying people. */
-export const isLive = (b: Booking) => ["accepted", "assigned", "ongoing"].includes(b.status);
+export const isLive = (b: Booking) => ["accepted", "assigned", "confirmed", "ongoing"].includes(b.status);
 
 /** Rest buffer between back-to-back shifts. */
 export const BUFFER_MS = 2 * 3600000;

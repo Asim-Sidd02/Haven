@@ -22,7 +22,9 @@ const serviceIcons = <String, IconData>{
 
 /// Pick a service, then browse approved agencies that offer it.
 class ExploreScreen extends StatefulWidget {
-  const ExploreScreen({super.key});
+  /// Service to preselect, e.g. when looking for another agency.
+  final String? initialService;
+  const ExploreScreen({super.key, this.initialService});
   @override
   State<ExploreScreen> createState() => _ExploreScreenState();
 }
@@ -30,7 +32,9 @@ class ExploreScreen extends StatefulWidget {
 class _ExploreScreenState extends State<ExploreScreen> {
   late final Stream<List<Agency>> _stream = DbService.instance
       .approvedAgencies();
-  String _service = serviceLabels.keys.first;
+  late String _service = serviceLabels.containsKey(widget.initialService)
+      ? widget.initialService!
+      : serviceLabels.keys.first;
   String _query = '';
 
   @override
